@@ -20,15 +20,15 @@ When contributing code or proposals, keep the following principles in mind:
 ## Development Environment Setup
 
 ### Prerequisites
-- **Python 3.12 or newer** (tested on Python 3.13 and 3.15)
+- **Python 3.12 or newer** (tested on Python 3.12, 3.13, and 3.15)
 - **Git**
-- Windows 10/11 (for native desktop testing and `.bat` packaging)
+- **Supported OS**: Windows 10/11, Linux (Ubuntu/Debian/Fedora/Arch), or macOS 12+ (Apple Silicon & Intel)
 
 ### Installation Steps
 
 1. **Fork and clone the repository:**
-   ```powershell
-   git clone https://github.com/<your-username>/a1-mini-pen-plotter.git
+   ```bash
+   git clone https://github.com/Hansolox80/a1-mini-pen-plotter.git
    cd a1-mini-pen-plotter
    ```
 

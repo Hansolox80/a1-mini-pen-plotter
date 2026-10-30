@@ -33,7 +33,7 @@ Paste log text here
 
 ## Environment
 - OS: Windows 10 / Windows 11 (64-bit)
-- Application Version: v1.0.0 (Standalone Executable or Source Code)
+- Application Version: v1.1.0 (Standalone Executable or Source Code)
 - Python Version (if running from source):
 - Printer: Bambu Lab A1 Mini (Firmware version if known)
 - Pen Holder Model / Adapter:

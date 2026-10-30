@@ -4,10 +4,11 @@
 
 **Dedicated SVG-to-G-code Preparation Studio for the Bambu Lab A1 Mini**
 
+[![Release v1.1.0](https://img.shields.io/badge/release-v1.1.0-blue.svg?logo=github&logoColor=white)](https://github.com/Hansolox80/a1-mini-pen-plotter/releases/tag/v1.1.0)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%20%7C%203.13%20%7C%203.15-blue.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![PySide6](https://img.shields.io/badge/GUI-PySide6%20Qt6-brightgreen.svg?logo=qt&logoColor=white)](https://doc.qt.io/qtforpython-6/)
-[![Platform Windows](https://img.shields.io/badge/platform-Windows%20x64-0078D6.svg?logo=windows&logoColor=white)](https://github.com/)
-[![Tests Passing](https://img.shields.io/badge/tests-20%20passed-22c55e.svg?logo=pytest&logoColor=white)](tests/)
+[![Platform Multi](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-0078D6.svg?logo=linux&logoColor=white)](https://github.com/Hansolox80/a1-mini-pen-plotter/releases)
+[![Tests Passing](https://img.shields.io/badge/tests-42%20passed-22c55e.svg?logo=pytest&logoColor=white)](tests/)
 [![License MIT](https://img.shields.io/badge/license-MIT-purple.svg)](LICENSE)
 [![Machine Bambu Lab A1 Mini](https://img.shields.io/badge/hardware-Bambu%20Lab%20A1%20Mini%20(180%C3%97180mm)-green.svg)](https://bambulab.com/en/a1-mini)
 
@@ -154,21 +155,21 @@ Before any execution-ready file can be exported, the mandatory validation engine
 No Python installation required.
 
 * **Windows (x64)**:
-  1. Download `A1-Mini-Pen-Plotter-v1.1.0-windows-x64.zip` from the [Releases](https://github.com/) page.
+  1. Download `A1-Mini-Pen-Plotter-v1.1.0-windows-x64.zip` from the [Releases](https://github.com/Hansolox80/a1-mini-pen-plotter/releases) page.
   2. Extract the archive and double-click **`A1 Mini Pen Plotter.exe`**.
   3. *(Optional)* Run `scripts\install_windows.ps1` to create Desktop & Start Menu shortcuts.
 * **Linux (x64)**:
-  1. Download `A1-Mini-Pen-Plotter-v1.1.0-linux-x64.tar.gz`.
+  1. Download `A1-Mini-Pen-Plotter-v1.1.0-linux-x64.tar.gz` from [Releases](https://github.com/Hansolox80/a1-mini-pen-plotter/releases).
   2. Extract and run `./A1\ Mini\ Pen\ Plotter/A1\ Mini\ Pen\ Plotter`.
 * **macOS (Apple Silicon & Intel)**:
-  1. Download `A1-Mini-Pen-Plotter-v1.1.0-macos.dmg`.
+  1. Download `A1-Mini-Pen-Plotter-v1.1.0-macos.dmg` from [Releases](https://github.com/Hansolox80/a1-mini-pen-plotter/releases).
   2. Drag **`A1 Mini Pen Plotter.app`** to your Applications folder.
 
-### Option B: Running from Source (Python 3.10+)
+### Option B: Running from Source (Python 3.12+)
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/<your-username>/a1-mini-pen-plotter.git
+git clone https://github.com/Hansolox80/a1-mini-pen-plotter.git
 cd a1-mini-pen-plotter
 
 # 2. Create and activate a virtual environment

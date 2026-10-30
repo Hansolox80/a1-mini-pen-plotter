@@ -51,6 +51,7 @@ fi
 
 # 5. Run Automated Tests
 echo "[INFO] Running automated test suites with pytest..."
+export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-offscreen}"
 pytest -v -q
 
 # 6. Build Standalone Linux Executable with PyInstaller
