@@ -320,6 +320,7 @@ class BuildPlateCanvas(QWidget):
     def paintEvent(self, event) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
 
         # 1. Backdrop fill
         painter.fillRect(self.rect(), QColor("#0E1013"))
@@ -508,13 +509,17 @@ class BuildPlateCanvas(QWidget):
                             self.mm_to_screen(mv.end_x, mv.end_y),
                         )
 
+            # Level of Detail (LOD) subsampling when zoomed far out and many moves exist
+            lod_stride = 1
+            if len(self.moves) > 3000 and self.zoom_px_per_mm < 2.0 and not self.simulation_active:
+                lod_stride = 2 if self.zoom_px_per_mm >= 1.2 else 3
+
             # Second pass: Travel moves
             if self.show_travel_moves:
                 pen_travel = QPen(QColor(56, 189, 248, 115), 1.0, Qt.PenStyle.DashLine)
                 painter.setPen(pen_travel)
-                for idx, mv in enumerate(self.moves):
-                    if idx > max_idx:
-                        break
+                for idx in range(0, max_idx + 1, lod_stride if not self.simulation_active else 1):
+                    mv = self.moves[idx]
                     if mv.move_type == MovementType.TRAVEL:
                         p0 = self.mm_to_screen(mv.start_x, mv.start_y)
                         if idx == max_idx and prog_in_last < 1.0:
@@ -535,9 +540,8 @@ class BuildPlateCanvas(QWidget):
             w_lim = self.machine.nominal_x_mm
             h_lim = self.machine.nominal_y_mm
 
-            for idx, mv in enumerate(self.moves):
-                if idx > max_idx:
-                    break
+            for idx in range(0, max_idx + 1, lod_stride if not self.simulation_active else 1):
+                mv = self.moves[idx]
                 if mv.move_type == MovementType.DRAW:
                     p0 = self.mm_to_screen(mv.start_x, mv.start_y)
                     if idx == max_idx and prog_in_last < 1.0:

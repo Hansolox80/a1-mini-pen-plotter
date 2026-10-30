@@ -6,6 +6,8 @@ from dataclasses import dataclass
 import math
 from typing import Sequence
 
+import numpy as np
+
 from app.core.coordinate_system import CoordinateTransformer
 from app.core.geometry import (
     deduplicate_points,
@@ -107,37 +109,48 @@ def optimize_nearest_neighbor(
     origin: tuple[float, float] = (0.0, 0.0),
     allow_reversal: bool = True,
 ) -> list[DrawablePath]:
-    """Greedy nearest-neighbor path ordering with optional start/end direction reversal."""
-    if len(paths) <= 1:
+    """Optimized nearest-neighbor path ordering using fully vectorized NumPy distance calculations."""
+    n = len(paths)
+    if n <= 1:
         return list(paths)
 
-    remaining = list(paths)
+    start_pts = np.array([p.start for p in paths], dtype=np.float64)
+    end_pts = np.array([p.end for p in paths], dtype=np.float64)
+    is_closed = np.array([p.is_closed for p in paths], dtype=bool)
+    active = np.ones(n, dtype=bool)
+
     ordered: list[DrawablePath] = []
-    cur_x, cur_y = origin
+    cur_x, cur_y = float(origin[0]), float(origin[1])
 
-    while remaining:
-        best_idx = 0
-        best_dist = float("inf")
-        best_reverse = False
+    for _ in range(n):
+        dx_s = start_pts[:, 0] - cur_x
+        dy_s = start_pts[:, 1] - cur_y
+        d_sq_s = dx_s * dx_s + dy_s * dy_s
+        d_sq_s[~active] = np.inf
+        min_s_idx = int(np.argmin(d_sq_s))
+        min_s_val = d_sq_s[min_s_idx]
 
-        for i, p in enumerate(remaining):
-            sx, sy = p.start
-            d_start = (sx - cur_x) ** 2 + (sy - cur_y) ** 2
-            if d_start < best_dist:
-                best_dist = d_start
-                best_idx = i
-                best_reverse = False
+        if allow_reversal:
+            dx_e = end_pts[:, 0] - cur_x
+            dy_e = end_pts[:, 1] - cur_y
+            d_sq_e = dx_e * dx_e + dy_e * dy_e
+            d_sq_e[~active | is_closed] = np.inf
+            min_e_idx = int(np.argmin(d_sq_e))
+            min_e_val = d_sq_e[min_e_idx]
 
-            if allow_reversal and not p.is_closed:
-                ex, ey = p.end
-                d_end = (ex - cur_x) ** 2 + (ey - cur_y) ** 2
-                if d_end < best_dist:
-                    best_dist = d_end
-                    best_idx = i
-                    best_reverse = True
+            if min_e_val < min_s_val:
+                found_idx = min_e_idx
+                found_reverse = True
+            else:
+                found_idx = min_s_idx
+                found_reverse = False
+        else:
+            found_idx = min_s_idx
+            found_reverse = False
 
-        chosen = remaining.pop(best_idx)
-        if best_reverse:
+        active[found_idx] = False
+        chosen = paths[found_idx]
+        if found_reverse:
             chosen = chosen.reversed()
         ordered.append(chosen)
         cur_x, cur_y = chosen.end
@@ -248,6 +261,8 @@ class ToolpathGenerator:
         fill_settings: FillSettings | None = None,
         invert_y: bool = True,
         normalize_origin: bool = True,
+        air_draw_mode: bool = False,
+        air_draw_offset_z_mm: float = 15.0,
     ) -> None:
         self.machine = machine
         self.pen = pen
@@ -255,6 +270,8 @@ class ToolpathGenerator:
         self.fill_settings = fill_settings or FillSettings()
         self.invert_y = invert_y
         self.normalize_origin = normalize_origin
+        self.air_draw_mode = air_draw_mode
+        self.air_draw_offset_z_mm = max(1.0, float(air_draw_offset_z_mm))
 
     def generate(
         self,
@@ -342,11 +359,13 @@ class ToolpathGenerator:
 
         # Build atomic 3D movements (TRAVEL, PEN_DOWN, DRAW, PEN_UP)
         moves: list[ToolpathMove] = []
-        pen_up_z = float(self.pen.pen_up_z_mm)
-        draw_z = float(self.pen.drawing_z_mm)
+        z_offset = self.air_draw_offset_z_mm if self.air_draw_mode else 0.0
+        pen_up_z = float(self.pen.pen_up_z_mm) + z_offset
+        draw_z = float(self.pen.drawing_z_mm) + z_offset
         travel_feed = float(self.pen.travel_speed_mm_s) * 60.0
         draw_feed = float(self.pen.draw_speed_mm_s) * 60.0
-        z_feed = float(self.pen.z_speed_mm_s) * 60.0
+        z_up_feed = float(self.pen.z_speed_mm_s) * 60.0
+        z_down_feed = float(getattr(self.pen, "z_down_speed_mm_s", min(8.0, self.pen.z_speed_mm_s))) * 60.0
         dwell_ms = int(self.pen.stabilization_delay_ms)
 
         cur_x, cur_y, cur_z = 0.0, 0.0, pen_up_z
@@ -383,7 +402,7 @@ class ToolpathGenerator:
                 move_idx += 1
                 cur_x, cur_y, cur_z = sx, sy, pen_up_z
 
-            # 2. Controlled Pen-Down transition
+            # 2. Controlled Pen-Down transition (gentle descent speed)
             mv_down = ToolpathMove(
                 index=move_idx,
                 move_type=MovementType.PEN_DOWN,
@@ -393,7 +412,7 @@ class ToolpathGenerator:
                 end_x=cur_x,
                 end_y=cur_y,
                 end_z=draw_z,
-                feed_rate_mm_min=z_feed,
+                feed_rate_mm_min=z_down_feed,
                 dwell_ms=dwell_ms,
                 layer=dpath.layer,
                 element_id=dpath.element_id,
@@ -401,6 +420,7 @@ class ToolpathGenerator:
             )
             moves.append(mv_down)
             move_idx += 1
+            cur_z = draw_z
             cur_z = draw_z
 
             # 3. Drawing segments
@@ -440,7 +460,7 @@ class ToolpathGenerator:
                 end_x=cur_x,
                 end_y=cur_y,
                 end_z=pen_up_z,
-                feed_rate_mm_min=z_feed,
+                feed_rate_mm_min=z_up_feed,
                 layer=dpath.layer,
                 element_id=dpath.element_id,
                 path_index=path_idx,
@@ -475,6 +495,8 @@ class ToolpathGenerator:
             unoptimized_travel_distance_mm=unoptimized_travel,
             optimization_improvement_pct=improvement_pct,
             estimated_time_seconds=est_time,
+            is_air_draw=self.air_draw_mode,
+            air_draw_offset_z_mm=z_offset,
         )
 
         return (moves, stats)

@@ -54,7 +54,11 @@ class GcodeGenerator:
         lines.append(f"; Target Machine: {self.machine.name} ({self.machine.nominal_x_mm:.0f}x{self.machine.nominal_y_mm:.0f} mm)")
         lines.append(f"; Workflow Compatibility Mode: {self.workflow_mode.value}")
         lines.append(f"; Pen Profile: {self.pen.name} (Tip: {self.pen.tip_diameter_mm:.2f} mm, Calibrated: {self.pen.is_calibrated})")
-        lines.append(f"; Z Heights: Draw={self.pen.drawing_z_mm:.2f} mm | Pen-Up={self.pen.pen_up_z_mm:.2f} mm | Safe={self.machine.safe_z_mm:.2f} mm")
+        if stats and stats.is_air_draw:
+            lines.append(f"; *** AIR DRAW / TEST MODE ACTIVE (+{stats.air_draw_offset_z_mm:.1f} mm Z SAFETY OFFSET) ***")
+            lines.append(f"; Actual Z Heights: Draw={self.pen.drawing_z_mm + stats.air_draw_offset_z_mm:.2f} mm | Pen-Up={self.pen.pen_up_z_mm + stats.air_draw_offset_z_mm:.2f} mm | Safe={self.machine.safe_z_mm:.2f} mm")
+        else:
+            lines.append(f"; Z Heights: Draw={self.pen.drawing_z_mm:.2f} mm | Pen-Up={self.pen.pen_up_z_mm:.2f} mm | Safe={self.machine.safe_z_mm:.2f} mm")
         if stats:
             lines.append(
                 f"; Drawing Bounds: X[{stats.min_x:.2f}..{stats.max_x:.2f}] Y[{stats.min_y:.2f}..{stats.max_y:.2f}] "
@@ -134,6 +138,7 @@ class GcodeGenerator:
                 mv.gcode_command = cmd_str
 
             elif mv.move_type == MovementType.PEN_DOWN:
+                lines.append("G90 ; Reassert absolute coordinates for controlled descent")
                 cmd_str = f"G1 Z{mv.end_z:.3f} F{mv.feed_rate_mm_min:.0f} ; Pen Down (Contact Z)"
                 lines.append(cmd_str)
                 mv.gcode_line_number = len(lines)
@@ -151,6 +156,7 @@ class GcodeGenerator:
                 mv.gcode_command = cmd_str
 
             elif mv.move_type == MovementType.PEN_UP:
+                lines.append("G90 ; Reassert absolute coordinates for safe lift")
                 cmd_str = f"G0 Z{mv.end_z:.3f} F{mv.feed_rate_mm_min:.0f} ; Pen Up (Lift Z)"
                 lines.append(cmd_str)
                 mv.gcode_line_number = len(lines)
@@ -181,7 +187,25 @@ class GcodeGenerator:
             lines.append(e_line.rstrip())
         lines.append("; --- END OF FILE ---")
 
-        return "\n".join(lines) + "\n"
+        raw_result = "\n".join(lines) + "\n"
+        return self._sanitize_safety(raw_result)
+
+    @staticmethod
+    def _sanitize_safety(gcode_text: str) -> str:
+        """Sanitizes G-code lines to guarantee no prohibited extrusion or heating slips through."""
+        cleaned_lines: list[str] = []
+        for line in gcode_text.splitlines():
+            code = line.split(";", 1)[0].strip()
+            if code:
+                cmd = code.split()[0].upper()
+                # Strip prohibited active heating
+                if cmd in ("M109", "M190"):
+                    continue
+                # Strip extrusion commands or unwanted macros
+                if cmd in ("M1002", "M620", "M621"):
+                    continue
+            cleaned_lines.append(line)
+        return "\n".join(cleaned_lines) + "\n"
 
     @staticmethod
     def _format_template(template: str, **kwargs: float) -> str:

@@ -37,6 +37,8 @@ class PlotterProject:
     workflow_mode: WorkflowMode = WorkflowMode.BAMBU_SD_DIRECT
     invert_y: bool = True
     normalize_origin: bool = True
+    air_draw_mode: bool = False
+    air_draw_offset_z_mm: float = 15.0
     toolpath_moves: list[ToolpathMove] = field(default_factory=list)
     dirty: bool = False
 
@@ -70,6 +72,8 @@ class PlotterProject:
             "workflow_mode": self.workflow_mode.value,
             "invert_y": self.invert_y,
             "normalize_origin": self.normalize_origin,
+            "air_draw_mode": self.air_draw_mode,
+            "air_draw_offset_z_mm": self.air_draw_offset_z_mm,
             "machine_profile": self.machine_profile.to_dict(),
             "pen_profile": self.pen_profile.to_dict(),
             "doc_transform": self.doc_transform.to_dict(),
@@ -127,6 +131,8 @@ class PlotterProject:
             workflow_mode=wf_mode,
             invert_y=bool(data.get("invert_y", True)),
             normalize_origin=bool(data.get("normalize_origin", True)),
+            air_draw_mode=bool(data.get("air_draw_mode", False)),
+            air_draw_offset_z_mm=float(data.get("air_draw_offset_z_mm", 15.0)),
             toolpath_moves=moves,
             dirty=False,
         )

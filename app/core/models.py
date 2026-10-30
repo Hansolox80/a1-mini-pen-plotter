@@ -284,6 +284,8 @@ class ToolpathStats:
     unoptimized_travel_distance_mm: float = 0.0
     optimization_improvement_pct: float = 0.0
     estimated_time_seconds: float = 0.0
+    is_air_draw: bool = False
+    air_draw_offset_z_mm: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -319,6 +321,8 @@ class ParsedSvgDocument:
                 continue
             for poly in el.polylines_mm:
                 for x, y in poly:
+                    if not (math.isfinite(x) and math.isfinite(y)):
+                        continue
                     if x < min_x:
                         min_x = x
                     if y < min_y:

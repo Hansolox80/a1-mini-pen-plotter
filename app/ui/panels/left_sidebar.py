@@ -7,6 +7,7 @@ from typing import Optional
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDoubleSpinBox,
     QFormLayout,
@@ -47,6 +48,7 @@ class LeftSidebar(QFrame):
     pen_profile_changed = Signal(PenProfile)
     calibration_wizard_requested = Signal()
     workflow_mode_changed = Signal(WorkflowMode)
+    air_draw_changed = Signal(bool, float)  # (is_air_draw, offset_z_mm)
     export_gcode_requested = Signal()
     export_3mf_requested = Signal()
     export_svg_requested = Signal()
@@ -489,7 +491,32 @@ class LeftSidebar(QFrame):
         self.lbl_workflow_desc.setObjectName("MutedLabel")
         self.lbl_workflow_desc.setWordWrap(True)
         cw_layout.addWidget(self.lbl_workflow_desc)
-        vbox.addWidget(card_wf)
+
+        # Test Mode / Air Draw Card
+        card_air = QFrame(content)
+        card_air.setObjectName("SectionCard")
+        cair_layout = QVBoxLayout(card_air)
+        cair_layout.setContentsMargins(10, 8, 10, 8)
+        cair_layout.setSpacing(6)
+
+        lbl_air = QLabel("SAFETY AIR DRAW / TEST MODE", card_air)
+        lbl_air.setObjectName("SectionHeader")
+        cair_layout.addWidget(lbl_air)
+
+        self.chk_air_draw = QCheckBox("Enable Air Draw Mode (Test in the Air)", card_air)
+        self.chk_air_draw.setToolTip("Adds a safety elevation offset (+15mm) to all pen movements to test trajectories before touching paper.")
+        cair_layout.addWidget(self.chk_air_draw)
+
+        form_air = QFormLayout()
+        self.spn_air_offset_z = self._make_dspin(5.0, 50.0, 15.0, " mm")
+        form_air.addRow("Air Z Offset:", self.spn_air_offset_z)
+        cair_layout.addLayout(form_air)
+
+        lbl_air_note = QLabel("Allows watching full toolpath execution in the air safely without any risk of pen crash.", card_air)
+        lbl_air_note.setObjectName("MutedLabel")
+        lbl_air_note.setWordWrap(True)
+        cair_layout.addWidget(lbl_air_note)
+        vbox.addWidget(card_air)
 
         # Export Actions Card
         card_exp = QFrame(content)
@@ -529,10 +556,16 @@ class LeftSidebar(QFrame):
         btn_safety.clicked.connect(self.inspect_safety_requested.emit)
         ce_layout.addWidget(btn_safety)
 
+        self.chk_air_draw.toggled.connect(self._on_air_draw_changed)
+        self.spn_air_offset_z.valueChanged.connect(self._on_air_draw_changed)
+
         vbox.addWidget(card_exp)
         vbox.addStretch(1)
         scroll.setWidget(content)
         return scroll
+
+    def _on_air_draw_changed(self) -> None:
+        self.air_draw_changed.emit(self.chk_air_draw.isChecked(), self.spn_air_offset_z.value())
 
     # ==========================================================================
     # Helper & Event Methods

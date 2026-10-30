@@ -67,7 +67,12 @@ def parse_svg_length(
     m = _LENGTH_RE.match(val_str)
     if not m:
         return (default_val, "")
-    num = float(m.group(1))
+    try:
+        num = float(m.group(1))
+        if not math.isfinite(num):
+            return (default_val, "")
+    except (ValueError, TypeError):
+        return (default_val, "")
     unit = m.group(2).lower()
     if unit == "%":
         return (reference_length * (num / 100.0), "%")
@@ -83,7 +88,12 @@ def parse_user_length(val_str: Optional[str], default_val: float = 0.0, dpi: flo
     m = _LENGTH_RE.match(val_str)
     if not m:
         return default_val
-    num = float(m.group(1))
+    try:
+        num = float(m.group(1))
+        if not math.isfinite(num):
+            return default_val
+    except (ValueError, TypeError):
+        return default_val
     unit = m.group(2).lower()
     if not unit or unit == "px":
         return num
@@ -246,7 +256,12 @@ def parse_svg_path_d(
 
     def next_float() -> float:
         nonlocal idx
-        val = float(tokens[idx])
+        try:
+            val = float(tokens[idx])
+            if not math.isfinite(val):
+                val = 0.0
+        except (ValueError, TypeError):
+            val = 0.0
         idx += 1
         return val
 
@@ -591,6 +606,9 @@ class SvgParser:
         root: ET.Element = SafeET.fromstring(svg_text)
         if _local_tag(root.tag).lower() != "svg":
             raise ValueError("Root XML element is not <svg>.")
+
+        # Strip massive raw string if SVG is very large (> 256KB) to conserve RAM
+        stored_raw = svg_text if len(svg_text) <= 262144 else ""
 
         # 1. Parse viewBox, width, height, and root unit conversion matrix
         vb_str = root.get("viewBox") or root.get("viewbox")
@@ -941,5 +959,5 @@ class SvgParser:
             original_units=original_units,
             elements=elements,
             warnings=warnings,
-            raw_svg_content=svg_text,
+            raw_svg_content=stored_raw,
         )

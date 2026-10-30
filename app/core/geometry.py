@@ -20,45 +20,38 @@ def flatten_cubic_bezier(
     p3: tuple[float, float],
     tolerance_mm: float = 0.08,
 ) -> list[tuple[float, float]]:
-    """Adaptively flattens a cubic Bézier curve into a polyline within `tolerance_mm`."""
+    """Adaptively flattens a cubic Bézier curve into a polyline within `tolerance_mm` using vectorized NumPy evaluation."""
     tol = max(0.002, float(tolerance_mm))
-    pts: list[tuple[float, float]] = [p0]
 
-    def subdivide(
-        a0: tuple[float, float],
-        a1: tuple[float, float],
-        a2: tuple[float, float],
-        a3: tuple[float, float],
-        depth: int,
-    ) -> None:
-        if depth > 12:
-            pts.append(a3)
-            return
+    # Calculate deviation norm (2nd derivative bound) using NumPy
+    pt0 = np.array(p0, dtype=np.float64)
+    pt1 = np.array(p1, dtype=np.float64)
+    pt2 = np.array(p2, dtype=np.float64)
+    pt3 = np.array(p3, dtype=np.float64)
 
-        # Estimate flatness using control point distance from baseline a0->a3
-        dx = a3[0] - a0[0]
-        dy = a3[1] - a0[1]
-        d2 = abs((a1[0] - a3[0]) * dy - (a1[1] - a3[1]) * dx)
-        d3 = abs((a2[0] - a3[0]) * dy - (a2[1] - a3[1]) * dx)
-        chord_len_sq = dx * dx + dy * dy
+    d1 = np.linalg.norm(pt0 - 2.0 * pt1 + pt2)
+    d2 = np.linalg.norm(pt1 - 2.0 * pt2 + pt3)
+    max_d = max(d1, d2)
 
-        if (d2 + d3) ** 2 <= tol * tol * chord_len_sq or (chord_len_sq < tol * tol and d2 + d3 < tol):
-            pts.append(a3)
-            return
+    # If practically straight collinear line segment, return endpoints immediately
+    if max_d < 1e-7:
+        return [p0, p3]
 
-        # De Casteljau midpoint split
-        m01 = ((a0[0] + a1[0]) * 0.5, (a0[1] + a1[1]) * 0.5)
-        m12 = ((a1[0] + a2[0]) * 0.5, (a1[1] + a2[1]) * 0.5)
-        m23 = ((a2[0] + a3[0]) * 0.5, (a2[1] + a3[1]) * 0.5)
-        m012 = ((m01[0] + m12[0]) * 0.5, (m01[1] + m12[1]) * 0.5)
-        m123 = ((m12[0] + m23[0]) * 0.5, (m12[1] + m23[1]) * 0.5)
-        mid = ((m012[0] + m123[0]) * 0.5, (m012[1] + m123[1]) * 0.5)
+    # Wang's formula for Bézier subdivision steps within tolerance
+    steps = int(np.ceil(np.sqrt((3.0 * max_d) / (4.0 * tol))))
+    steps = max(2, min(steps, 64))
 
-        subdivide(a0, m01, m012, mid, depth + 1)
-        subdivide(mid, m123, m23, a3, depth + 1)
+    t = np.linspace(0.0, 1.0, steps + 1, dtype=np.float64)[:, np.newaxis]
+    t_inv = 1.0 - t
 
-    subdivide(p0, p1, p2, p3, 0)
-    return pts
+    # Vectorized cubic Bernstein polynomials: B(t) = (1-t)^3*P0 + 3(1-t)^2*t*P1 + 3(1-t)*t^2*P2 + t^3*P3
+    b0 = t_inv ** 3
+    b1 = 3.0 * (t_inv ** 2) * t
+    b2 = 3.0 * t_inv * (t ** 2)
+    b3 = t ** 3
+
+    curve_pts = b0 * pt0 + b1 * pt1 + b2 * pt2 + b3 * pt3
+    return [(float(x), float(y)) for x, y in curve_pts]
 
 
 def flatten_quadratic_bezier(
@@ -178,19 +171,31 @@ def deduplicate_points(
     polyline: Sequence[tuple[float, float]],
     min_dist_mm: float = 0.005,
 ) -> list[tuple[float, float]]:
-    """Removes consecutive duplicate or near-duplicate points within `min_dist_mm`."""
+    """Removes consecutive duplicate or near-duplicate points and sanitizes non-finite coordinates within `min_dist_mm`."""
     if not polyline:
         return []
-    result: list[tuple[float, float]] = [polyline[0]]
+    # Strip any NaN or Inf coordinates defensively
+    sanitized: list[tuple[float, float]] = []
+    for pt in polyline:
+        try:
+            x, y = float(pt[0]), float(pt[1])
+            if math.isfinite(x) and math.isfinite(y):
+                sanitized.append((x, y))
+        except (ValueError, TypeError, IndexError):
+            continue
+    if not sanitized:
+        return []
+
+    result: list[tuple[float, float]] = [sanitized[0]]
     min_d = max(1e-6, float(min_dist_mm))
-    for pt in polyline[1:]:
+    for pt in sanitized[1:]:
         prev = result[-1]
         if math.hypot(pt[0] - prev[0], pt[1] - prev[1]) >= min_d:
             result.append(pt)
     # If original had >=2 points and collapsed to 1, preserve endpoint if distinct
-    if len(result) == 1 and len(polyline) >= 2:
-        if math.hypot(polyline[-1][0] - result[0][0], polyline[-1][1] - result[0][1]) > 1e-7:
-            result.append(polyline[-1])
+    if len(result) == 1 and len(sanitized) >= 2:
+        if math.hypot(sanitized[-1][0] - result[0][0], sanitized[-1][1] - result[0][1]) > 1e-7:
+            result.append(sanitized[-1])
     return result
 
 

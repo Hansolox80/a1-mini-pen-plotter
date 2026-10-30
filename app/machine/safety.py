@@ -108,16 +108,21 @@ ALLOWED_GCODE_COMMANDS = {
 
 # Explicitly prohibited or dangerous commands for pen plotting
 FORBIDDEN_GCODE_COMMANDS = {
+    "G12": "Nozzle wipe / clean routine (G12) is strictly prohibited as it would collide with the physical pen bracket.",
     "G20": "Inch unit mode (G20) is prohibited; A1 Mini Pen Plotter requires millimeter mode (G21).",
-    "G91": "Relative positioning (G91) is prohibited in plotting trajectories; use G90 absolute coordinates.",
     "G29": "Automatic bed leveling (G29) with a pen mounted risks crashing the pen tip into the build plate.",
     "G29.1": "Bambu Z-offset probing (G29.1) is unsafe with a physical pen installed.",
     "G29.2": "Bambu ABL state macro (G29.2) is unverified for pen plotting.",
-    "M109": "Wait-for-hotend-heating (M109) is prohibited for cold pen plotting.",
-    "M190": "Wait-for-bed-heating (M190) is prohibited for cold pen plotting.",
+    "G38": "Probe/filament cutter detection command (G38) is prohibited in pen plotting mode.",
+    "G38.2": "Probe/filament cutter detection command (G38.2) is prohibited in pen plotting mode.",
+    "G91": "Relative positioning (G91) is prohibited in plotting trajectories; use G90 absolute coordinates.",
+    "M109": "Wait-for-hotend-heating (M109) is strictly prohibited for cold pen plotting.",
+    "M190": "Wait-for-bed-heating (M190) is strictly prohibited for cold pen plotting.",
     "M1002": "Proprietary Bambu system macro (M1002) may trigger nozzle wiping or resonance vibration.",
     "M620": "Bambu AMS filament switch command (M620) is prohibited in pen plotting mode.",
     "M621": "Bambu AMS filament commit command (M621) is prohibited in pen plotting mode.",
+    "M73": "Print progress override is unverified.",
+    "M106 P2": "Chamber fan control is unsupported on A1 Mini.",
 }
 
 
@@ -366,12 +371,12 @@ class SafetyValidator:
                 ):
                     add_issue_throttled(
                         ValidationIssue(
-                            severity=ValidationSeverity.WARNING,
+                            severity=ValidationSeverity.CRITICAL,
                             code="OUTSIDE_SAFETY_MARGIN",
                             title="Drawing Movement Enters Safety Margin",
                             message=(
-                                f"Drawing coordinate (X={mv.end_x:.2f}, Y={mv.end_y:.2f} mm) is outside the "
-                                f"configured usable area X[{self.machine.usable_min_x:.1f}..{self.machine.usable_max_x:.1f}], "
+                                f"Drawing coordinate (X={mv.end_x:.2f}, Y={mv.end_y:.2f} mm) violates the "
+                                f"configured usable area soft stop X[{self.machine.usable_min_x:.1f}..{self.machine.usable_max_x:.1f}], "
                                 f"Y[{self.machine.usable_min_y:.1f}..{self.machine.usable_max_y:.1f}] mm."
                             ),
                             line_number=mv.gcode_line_number,
@@ -400,15 +405,16 @@ class SafetyValidator:
             # Check Pen Transition State Machine
             if mv.move_type == MovementType.PEN_DOWN:
                 pen_is_down = True
-                if mv.feed_rate_mm_min > max_z_feed + 1.0:
+                allowed_z_down = float(getattr(self.pen, "z_down_speed_mm_s", min(8.0, self.machine.max_z_speed_mm_s))) * 60.0
+                if mv.feed_rate_mm_min > allowed_z_down + 1.0:
                     add_issue_throttled(
                         ValidationIssue(
                             severity=ValidationSeverity.CRITICAL,
                             code="EXCESSIVE_Z_FEEDRATE",
                             title="Excessive Z Lowering Speed",
                             message=(
-                                f"Z feed rate {mv.feed_rate_mm_min:.0f} mm/min exceeds limit "
-                                f"{max_z_feed:.0f} mm/min ({self.machine.max_z_speed_mm_s:.1f} mm/s)."
+                                f"Z pen descent feed rate {mv.feed_rate_mm_min:.0f} mm/min exceeds soft descent limit "
+                                f"{allowed_z_down:.0f} mm/min ({allowed_z_down / 60.0:.1f} mm/s)."
                             ),
                             line_number=mv.gcode_line_number,
                             command=mv.gcode_command,
@@ -612,6 +618,35 @@ class SafetyValidator:
                 cur_x = params.get("X", cur_x)
                 cur_y = params.get("Y", cur_y)
                 cur_z = params.get("Z", cur_z)
+
+                # Check G-code coordinate against machine boundaries
+                if cur_x < -1e-4 or cur_y < -1e-4:
+                    report.issues.append(
+                        ValidationIssue(
+                            severity=ValidationSeverity.CRITICAL,
+                            code="GCODE_NEGATIVE_COORDINATE",
+                            title="G-code Command Targets Negative Machine Coordinate",
+                            message=f"Line {idx} moves head to negative coordinate (X={cur_x:.3f}, Y={cur_y:.3f}).",
+                            line_number=idx,
+                            command=raw_line.strip(),
+                            coordinates=(cur_x, cur_y, cur_z),
+                        )
+                    )
+                if cur_x > self.machine.nominal_x_mm + 1e-4 or cur_y > self.machine.nominal_y_mm + 1e-4:
+                    report.issues.append(
+                        ValidationIssue(
+                            severity=ValidationSeverity.CRITICAL,
+                            code="GCODE_EXCEEDS_BOUNDS",
+                            title="G-code Command Exceeds A1 Mini Physical Workspace",
+                            message=(
+                                f"Line {idx} targets (X={cur_x:.2f}, Y={cur_y:.2f} mm), exceeding build volume "
+                                f"({self.machine.nominal_x_mm:.0f}x{self.machine.nominal_y_mm:.0f} mm)."
+                            ),
+                            line_number=idx,
+                            command=raw_line.strip(),
+                            coordinates=(cur_x, cur_y, cur_z),
+                        )
+                    )
 
         if not has_g21:
             report.issues.append(

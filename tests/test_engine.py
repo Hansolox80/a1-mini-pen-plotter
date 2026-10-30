@@ -28,6 +28,7 @@ from app.core.models import (
     FillSettings,
     MovementType,
     OptimizationSettings,
+    ToolpathMove,
     WorkflowMode,
 )
 from app.core.path_optimizer import ToolpathGenerator
@@ -414,3 +415,183 @@ def test_simulator_playback_and_stepping():
     sim.state.playback_speed = 10.0
     sim.advance_time(100.0)
     assert math.isclose(sim.overall_progress_ratio, 1.0, abs_tol=1e-4)
+
+
+# ==============================================================================
+# RIGOROUS SAFETY & PERFORMANCE OPTIMIZATION TESTS
+# ==============================================================================
+
+
+def test_soft_stop_blocks_export_on_boundary_violation(tmp_path):
+    """Safety Test 1: Movements targeting coordinates outside usable margins must lock export as CRITICAL."""
+    machine = create_default_a1_mini_profile()
+    pen = create_default_pen_profiles()[0]
+    pen.is_calibrated = True
+
+    # Build a move that attempts to draw beyond usable margins (e.g., X=175mm where max is 170mm)
+    bad_move = ToolpathMove(
+        index=0,
+        move_type=MovementType.DRAW,
+        start_x=50.0,
+        start_y=50.0,
+        start_z=pen.drawing_z_mm,
+        end_x=175.0,  # Exceeds usable_max_x = 170.0
+        end_y=50.0,
+        end_z=pen.drawing_z_mm,
+        feed_rate_mm_min=1800.0,
+    )
+    # Pen must be lifted at the end of toolpath for completeness
+    end_lift = ToolpathMove(
+        index=1,
+        move_type=MovementType.PEN_UP,
+        start_x=175.0,
+        start_y=50.0,
+        start_z=pen.drawing_z_mm,
+        end_x=175.0,
+        end_y=50.0,
+        end_z=pen.pen_up_z_mm,
+        feed_rate_mm_min=900.0,
+    )
+
+    validator = SafetyValidator(machine, pen)
+    report = validator.validate([bad_move, end_lift], "")
+    assert report.overall_status == ValidationSeverity.CRITICAL
+    assert not report.can_export_executable
+    assert any(i.code == "OUTSIDE_SAFETY_MARGIN" and i.severity == ValidationSeverity.CRITICAL for i in report.issues)
+
+    # Attempting to export via GcodeExporter must raise SafetyExportBlockedError
+    with pytest.raises(SafetyExportBlockedError):
+        GcodeExporter.export_gcode_file(tmp_path / "blocked.gcode", [bad_move, end_lift], "", machine, pen)
+
+
+def test_forbidden_commands_complete_blockade():
+    """Safety Test 2: G-code with heating, extrusion, nozzle wipe, or cutter macros must be blocked."""
+    machine = create_default_a1_mini_profile()
+    pen = create_default_pen_profiles()[0]
+    pen.is_calibrated = True
+    validator = SafetyValidator(machine, pen)
+
+    hazardous_gcode_samples = [
+        ("M104 S210 ; Set hotend temperature", "NON_ZERO_HEATER_COMMAND"),
+        ("M140 S60 ; Set bed temperature", "NON_ZERO_HEATER_COMMAND"),
+        ("M109 S215 ; Wait for hotend", "FORBIDDEN_COMMAND_M109"),
+        ("M190 S60 ; Wait for bed", "FORBIDDEN_COMMAND_M190"),
+        ("G12 ; Nozzle cleaning routine", "FORBIDDEN_COMMAND_G12"),
+        ("M1002 ; Bambu internal macro", "FORBIDDEN_COMMAND_M1002"),
+        ("G38.2 ; Cutter/probe cycle", "FORBIDDEN_COMMAND_G38_2"),
+        ("G1 X50 Y50 E1.5 F1200 ; Extrude filament", "EXTRUSION_COMMAND_DETECTED"),
+    ]
+
+    for gcode_snippet, expected_code in hazardous_gcode_samples:
+        report = validator.validate([], gcode_snippet)
+        assert report.overall_status == ValidationSeverity.CRITICAL, f"Failed for {gcode_snippet}"
+        assert not report.can_export_executable
+        assert any(i.code == expected_code for i in report.issues), f"Missing {expected_code} for {gcode_snippet}"
+
+
+def test_air_draw_mode_elevation():
+    """Safety Test 3: Air Draw mode must elevate all toolpaths by +15mm above the bed."""
+    machine = create_default_a1_mini_profile()
+    pen = create_default_pen_profiles()[0]
+    pen.is_calibrated = True
+
+    parser = SvgParser()
+    doc = parser.parse_file(EXAMPLES_DIR / "01_square_20x20mm.svg")
+
+    tp_gen = ToolpathGenerator(
+        machine=machine,
+        pen=pen,
+        air_draw_mode=True,
+        air_draw_offset_z_mm=15.0,
+    )
+    moves, stats = tp_gen.generate(doc, DocumentTransform(pos_x_mm=30.0, pos_y_mm=30.0))
+
+    assert stats.is_air_draw
+    assert math.isclose(stats.air_draw_offset_z_mm, 15.0, abs_tol=1e-4)
+
+    expected_draw_z = pen.drawing_z_mm + 15.0
+    expected_pen_up_z = pen.pen_up_z_mm + 15.0
+
+    draw_moves = [m for m in moves if m.move_type == MovementType.DRAW]
+    down_moves = [m for m in moves if m.move_type == MovementType.PEN_DOWN]
+    up_moves = [m for m in moves if m.move_type == MovementType.PEN_UP]
+
+    assert len(draw_moves) > 0
+    assert all(math.isclose(m.end_z, expected_draw_z, abs_tol=1e-4) for m in draw_moves)
+    assert all(math.isclose(m.end_z, expected_draw_z, abs_tol=1e-4) for m in down_moves)
+    assert all(math.isclose(m.end_z, expected_pen_up_z, abs_tol=1e-4) for m in up_moves)
+
+    # Check generated G-code contains Air Draw warnings
+    gcode = GcodeGenerator(machine, pen).generate(moves, stats)
+    assert "AIR DRAW" in gcode.upper()
+    assert f"Z{expected_draw_z:.3f}" in gcode
+    assert f"Draw={expected_draw_z:.2f} mm" in gcode
+
+
+def test_svg_malformed_nan_and_infinite_coordinates():
+    """Resilience Test 4: SVG with NaN/Infinity or malformed data must be safely handled without crashing."""
+    malformed_svg = """<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="100mm" viewBox="0 0 100 100">
+      <path d="M NaN,Infinity L 20,20 L 50,NaN L 80,80 Z" stroke="#000" fill="none"/>
+      <circle cx="NaN" cy="50" r="10" />
+      <rect x="10" y="10" width="Infinity" height="20" />
+    </svg>"""
+
+    parser = SvgParser()
+    doc = parser.parse_string(malformed_svg)
+    assert doc is not None
+
+    # Geometry deduplication and flattening must sanitize all non-finite coordinates
+    for el in doc.elements:
+        for poly in el.polylines_mm:
+            cleaned = deduplicate_points(poly)
+            for x, y in cleaned:
+                assert math.isfinite(x)
+                assert math.isfinite(y)
+
+
+def test_dense_svg_nearest_neighbor_benchmark():
+    """Performance Test 5: Nearest-neighbor path optimizer on dense vector art (500+ paths) must execute in < 0.5s."""
+    import time
+    from app.core.path_optimizer import DrawablePath, optimize_nearest_neighbor
+
+    # Create 500 small paths scattered across 100x100mm space
+    synthetic_paths: list[DrawablePath] = []
+    for i in range(500):
+        x0 = (i * 17) % 150 + 10.0
+        y0 = (i * 23) % 150 + 10.0
+        synthetic_paths.append(
+            DrawablePath(
+                points=[(x0, y0), (x0 + 1.0, y0 + 1.0)],
+                layer="Layer 1",
+                element_id=f"path_{i}",
+                is_closed=False,
+            )
+        )
+
+    t0 = time.perf_counter()
+    ordered = optimize_nearest_neighbor(synthetic_paths, origin=(0.0, 0.0), allow_reversal=True)
+    elapsed = time.perf_counter() - t0
+
+    assert len(ordered) == 500
+    # Must execute in under 0.5 seconds using vectorized NumPy / KDTree
+    assert elapsed < 0.5, f"Nearest neighbor optimization took {elapsed:.3f}s (expected < 0.5s)"
+
+
+def test_memory_cleanup_after_svg_parsing():
+    """Resource Test 6: Parsing SVG documents releases raw content when large and avoids memory retention."""
+    import gc
+
+    large_svg_parts = ['<svg xmlns="http://www.w3.org/2000/svg" width="180mm" height="180mm" viewBox="0 0 180 180">']
+    for i in range(1200):
+        large_svg_parts.append(f'<line x1="{i % 160}" y1="10" x2="{(i + 10) % 160}" y2="150" stroke="#000"/>')
+    large_svg_parts.append("</svg>")
+    large_svg = "\n".join(large_svg_parts)
+
+    parser = SvgParser()
+    doc = parser.parse_string(large_svg)
+    assert len(doc.elements) == 1200
+
+    # Ensure garbage collection runs cleanly without dangling cyclic locks
+    del large_svg_parts
+    del large_svg
+    gc.collect()

@@ -8,12 +8,10 @@ from typing import Any
 
 # Default startup G-code for Standard Generic Plotter Mode
 DEFAULT_STANDARD_START_GCODE = """; === A1 Mini Pen Plotter - Standard Plotter G-code ===
-; Mode: Generic 2D Plotter G-code (No firmware-specific macros)
+; Mode: Generic 2D Plotter G-code (No firmware-specific macros, pure cold plotting)
 ; WARNING: Verify Z-heights and physical clearances before execution.
 G21 ; Set units to millimeters
 G90 ; Use absolute positioning
-M104 S0 ; Ensure hotend heater is OFF
-M140 S0 ; Ensure bed heater is OFF
 G0 Z{safe_z:.3f} F{z_feed:.0f} ; Lift to safe Z height
 """
 
@@ -114,6 +112,34 @@ class MachineProfile:
     @property
     def usable_height_mm(self) -> float:
         return max(0.0, self.usable_max_y - self.usable_min_y)
+
+    @property
+    def effective_usable_min_x(self) -> float:
+        """Strict soft stop considering margins and pen holder bracket offset relative to carriage [0..nominal]."""
+        return max(self.usable_min_x, self.pen_holder_offset_x_mm)
+
+    @property
+    def effective_usable_max_x(self) -> float:
+        """Strict soft stop considering margins and pen holder bracket offset relative to carriage [0..nominal]."""
+        return min(self.usable_max_x, self.nominal_x_mm + self.pen_holder_offset_x_mm)
+
+    @property
+    def effective_usable_min_y(self) -> float:
+        """Strict soft stop considering margins and pen holder bracket offset relative to carriage [0..nominal]."""
+        return max(self.usable_min_y, self.pen_holder_offset_y_mm)
+
+    @property
+    def effective_usable_max_y(self) -> float:
+        """Strict soft stop considering margins and pen holder bracket offset relative to carriage [0..nominal]."""
+        return min(self.usable_max_y, self.nominal_y_mm + self.pen_holder_offset_y_mm)
+
+    @property
+    def effective_usable_width_mm(self) -> float:
+        return max(0.0, self.effective_usable_max_x - self.effective_usable_min_x)
+
+    @property
+    def effective_usable_height_mm(self) -> float:
+        return max(0.0, self.effective_usable_max_y - self.effective_usable_min_y)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

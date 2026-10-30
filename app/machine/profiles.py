@@ -34,7 +34,8 @@ class PenProfile:
     # Speeds (mm/s)
     draw_speed_mm_s: float = 35.0
     travel_speed_mm_s: float = 120.0
-    z_speed_mm_s: float = 15.0
+    z_speed_mm_s: float = 15.0  # Pen-Up (lift) speed
+    z_down_speed_mm_s: float = 8.0  # Pen-Down (controlled smooth descent/plunge speed)
     # Dwell after lowering pen (ms)
     stabilization_delay_ms: int = 60
     is_calibrated: bool = False
@@ -45,6 +46,8 @@ class PenProfile:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> PenProfile:
+        z_up = max(1.0, float(data.get("z_speed_mm_s", 15.0)))
+        z_down = max(0.5, float(data.get("z_down_speed_mm_s", min(8.0, z_up))))
         return cls(
             id=str(data.get("id", f"pen_{uuid.uuid4().hex[:8]}")),
             name=str(data.get("name", "Custom Pen")),
@@ -58,7 +61,8 @@ class PenProfile:
             y_offset_mm=float(data.get("y_offset_mm", 0.0)),
             draw_speed_mm_s=max(1.0, float(data.get("draw_speed_mm_s", 35.0))),
             travel_speed_mm_s=max(5.0, float(data.get("travel_speed_mm_s", 120.0))),
-            z_speed_mm_s=max(1.0, float(data.get("z_speed_mm_s", 15.0))),
+            z_speed_mm_s=z_up,
+            z_down_speed_mm_s=z_down,
             stabilization_delay_ms=max(0, int(data.get("stabilization_delay_ms", 60))),
             is_calibrated=bool(data.get("is_calibrated", False)),
             notes=str(data.get("notes", "")),

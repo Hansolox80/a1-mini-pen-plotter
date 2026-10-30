@@ -382,6 +382,7 @@ class MainWindow(QMainWindow):
         self.left_sidebar.pen_profile_changed.connect(self._on_pen_changed)
         self.left_sidebar.calibration_wizard_requested.connect(self.action_open_calibration_wizard)
         self.left_sidebar.workflow_mode_changed.connect(self._on_workflow_mode_changed)
+        self.left_sidebar.air_draw_changed.connect(self._on_air_draw_changed)
         self.left_sidebar.export_gcode_requested.connect(self.action_export_gcode)
         self.left_sidebar.export_3mf_requested.connect(self.action_export_3mf)
         self.left_sidebar.export_svg_requested.connect(self.action_export_optimized_svg)
@@ -476,6 +477,8 @@ class MainWindow(QMainWindow):
             fill_settings=self.project.fill_settings,
             invert_y=self.project.invert_y,
             normalize_origin=self.project.normalize_origin,
+            air_draw_mode=self.project.air_draw_mode,
+            air_draw_offset_z_mm=self.project.air_draw_offset_z_mm,
         )
         moves, stats = tp_gen.generate(doc, self.project.doc_transform)
         self.project.toolpath_moves = moves
@@ -631,6 +634,12 @@ class MainWindow(QMainWindow):
 
     def _on_workflow_mode_changed(self, mode: WorkflowMode) -> None:
         self.project.workflow_mode = mode
+        self.project.dirty = True
+        self.recompute_pipeline()
+
+    def _on_air_draw_changed(self, is_air_draw: bool, offset_z: float) -> None:
+        self.project.air_draw_mode = is_air_draw
+        self.project.air_draw_offset_z_mm = offset_z
         self.project.dirty = True
         self.recompute_pipeline()
 
