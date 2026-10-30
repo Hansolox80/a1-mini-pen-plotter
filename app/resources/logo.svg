@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <rect x="12" y="12" width="232" height="232" rx="44" fill="#14171A" stroke="#2B313A" stroke-width="6"/>
+  <!-- Build Plate Grid -->
+  <rect x="44" y="44" width="168" height="168" rx="14" fill="#1B1F24" stroke="#22C55E" stroke-width="3" stroke-opacity="0.45"/>
+  <line x1="100" y1="44" x2="100" y2="212" stroke="#262C34" stroke-width="2"/>
+  <line x1="156" y1="44" x2="156" y2="212" stroke="#262C34" stroke-width="2"/>
+  <line x1="44" y1="100" x2="212" y2="100" stroke="#262C34" stroke-width="2"/>
+  <line x1="44" y1="156" x2="212" y2="156" stroke="#262C34" stroke-width="2"/>
+  <!-- Plotted Trajectory Curve -->
+  <path d="M 64 184 C 84 116, 128 192, 156 124" fill="none" stroke="#22C55E" stroke-width="8" stroke-linecap="round"/>
+  <!-- Precision Pen Nib / Toolhead -->
+  <polygon points="156,124 180,68 202,90" fill="#22C55E"/>
+  <polygon points="180,68 194,54 216,76 202,90" fill="#E2E8F0"/>
+  <circle cx="64" cy="184" r="7" fill="#38BDF8"/>
+</svg>

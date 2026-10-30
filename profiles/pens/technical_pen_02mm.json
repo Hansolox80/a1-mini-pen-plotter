@@ -1,0 +1,18 @@
+{
+  "id": "technical_pen_02mm",
+  "name": "Technical Drafting Pen 0.2mm",
+  "tip_diameter_mm": 0.2,
+  "color_hex": "#F59E0B",
+  "pen_up_z_mm": 17.5,
+  "pen_down_z_mm": 14.1,
+  "drawing_z_mm": 14.0,
+  "lift_height_mm": 3.5,
+  "x_offset_mm": 0.0,
+  "y_offset_mm": 0.0,
+  "draw_speed_mm_s": 25.0,
+  "travel_speed_mm_s": 100.0,
+  "z_speed_mm_s": 10.0,
+  "stabilization_delay_ms": 80,
+  "is_calibrated": false,
+  "notes": "High-precision drafting pen \u2014 uses slower drawing speed and longer stabilization."
+}

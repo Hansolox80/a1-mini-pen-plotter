@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="120mm" height="120mm" viewBox="0 0 120 120">
+  <g id="OuterGroup" transform="translate(20, 20) scale(2, 2)">
+    <!-- 10x10 rect scaled by 2x2 becomes a 20x20mm square -->
+    <rect id="transformed_square" x="5" y="5" width="10" height="10" fill="none" stroke="#22C55E" />
+    <g id="InnerRotatedGroup" transform="translate(25, 25) rotate(45)">
+      <rect id="rotated_diamond" x="-5" y="-5" width="10" height="10" fill="none" stroke="#F59E0B" />
+    </g>
+  </g>
+</svg>

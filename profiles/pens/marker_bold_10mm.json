@@ -1,0 +1,18 @@
+{
+  "id": "marker_bold_10mm",
+  "name": "Bold Marker 1.0mm (Sharpie / Posca)",
+  "tip_diameter_mm": 1.0,
+  "color_hex": "#F43F5E",
+  "pen_up_z_mm": 19.0,
+  "pen_down_z_mm": 14.2,
+  "drawing_z_mm": 14.0,
+  "lift_height_mm": 5.0,
+  "x_offset_mm": 0.0,
+  "y_offset_mm": 0.0,
+  "draw_speed_mm_s": 45.0,
+  "travel_speed_mm_s": 140.0,
+  "z_speed_mm_s": 15.0,
+  "stabilization_delay_ms": 50,
+  "is_calibrated": false,
+  "notes": "Broad tip suitable for hatching and bold contours."
+}

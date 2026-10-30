@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 220x220 mm drawing exceeds the 180x180 mm A1 Mini build plate -->
+<svg xmlns="http://www.w3.org/2000/svg" width="220mm" height="220mm" viewBox="0 0 220 220">
+  <rect id="oversized_border" x="0" y="0" width="220" height="220" fill="none" stroke="#EF4444" />
+  <circle id="oversized_circle" cx="110" cy="110" r="105" fill="none" stroke="#F59E0B" />
+</svg>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="120mm" height="100mm" viewBox="0 0 120 100">
+  <g id="BezierCurves">
+    <!-- Cubic Bezier wave -->
+    <path id="cubic_wave" d="M 10 50 C 30 10, 50 90, 70 50 S 100 10, 110 50" fill="none" stroke="#22C55E" stroke-width="0.4" />
+    <!-- Quadratic Bezier arch -->
+    <path id="quad_arch" d="M 10 80 Q 60 20 110 80" fill="none" stroke="#F59E0B" stroke-width="0.4" />
+    <!-- Elliptical Arc -->
+    <path id="svg_arc" d="M 20 30 A 25 15 0 0 1 80 30" fill="none" stroke="#38BDF8" stroke-width="0.4" />
+  </g>
+</svg>

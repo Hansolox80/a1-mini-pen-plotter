@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Physical size is 60x60mm, while viewBox is 0 0 600 600 (10:1 scale factor) -->
+<svg xmlns="http://www.w3.org/2000/svg" width="60mm" height="60mm" viewBox="0 0 600 600">
+  <rect id="scaled_square_20mm" x="100" y="100" width="200" height="200" fill="none" stroke="#22C55E" stroke-width="4" />
+  <circle id="scaled_circle_10mm" cx="400" cy="400" r="50" fill="none" stroke="#38BDF8" stroke-width="4" />
+</svg>

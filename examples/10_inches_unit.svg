@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 1 inch = 25.4 mm; a 1in x 1in square must measure 25.4 x 25.4 mm -->
+<svg xmlns="http://www.w3.org/2000/svg" width="4in" height="4in">
+  <rect id="one_inch_square" x="0.5in" y="0.5in" width="1in" height="1in" fill="none" stroke="#22C55E" />
+</svg>

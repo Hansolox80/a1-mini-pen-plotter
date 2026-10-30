@@ -1,0 +1,18 @@
+{
+  "id": "ballpoint_standard",
+  "name": "Ballpoint Pen 0.7mm (Spring Mount)",
+  "tip_diameter_mm": 0.7,
+  "color_hex": "#38BDF8",
+  "pen_up_z_mm": 18.5,
+  "pen_down_z_mm": 14.0,
+  "drawing_z_mm": 13.8,
+  "lift_height_mm": 4.5,
+  "x_offset_mm": 0.0,
+  "y_offset_mm": 0.0,
+  "draw_speed_mm_s": 50.0,
+  "travel_speed_mm_s": 150.0,
+  "z_speed_mm_s": 15.0,
+  "stabilization_delay_ms": 40,
+  "is_calibrated": false,
+  "notes": "Standard ballpoint pen \u2014 requires firm contact or spring-loaded mount."
+}
