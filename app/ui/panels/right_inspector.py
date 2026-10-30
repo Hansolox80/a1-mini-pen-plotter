@@ -371,6 +371,15 @@ class RightInspectorPanel(QFrame):
         )
         self._updating_ui = False
 
+    def update_position_preview(self, pos_x: float, pos_y: float) -> None:
+        """Updates position spinboxes without emitting transform_changed signal during drag."""
+        self._updating_ui = True
+        try:
+            self.spn_pos_x.setValue(pos_x)
+            self.spn_pos_y.setValue(pos_y)
+        finally:
+            self._updating_ui = False
+
     def current_transform(self) -> DocumentTransform:
         return DocumentTransform(
             pos_x_mm=self.spn_pos_x.value(),

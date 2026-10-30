@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from typing import Optional
 
-from PySide6.QtCore import QPointF, QRectF, Qt, Signal
+from PySide6.QtCore import QLineF, QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import (
     QBrush,
     QColor,
@@ -62,6 +62,7 @@ class BuildPlateCanvas(QWidget):
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setMinimumSize(480, 420)
+        self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, True)
 
         # Data state
         self.machine: MachineProfile = MachineProfile()
@@ -99,6 +100,7 @@ class BuildPlateCanvas(QWidget):
         self._is_dragging_drawing: bool = False
         self._drag_start_mouse_mm: tuple[float, float] = (0.0, 0.0)
         self._drag_start_transform: Optional[DocumentTransform] = None
+        self._drag_delta_mm: tuple[float, float] = (0.0, 0.0)
 
         self._is_measuring: bool = False
         self._measure_start_mm: Optional[tuple[float, float]] = None
@@ -350,12 +352,23 @@ class BuildPlateCanvas(QWidget):
         # 5. Draw Coordinate Axes & Origin Marker
         self._draw_axes_and_origin(painter)
 
-        # 6. Draw Toolpaths & SVG Preview
+        # 6. Draw Toolpaths & SVG Preview + 7. Selection Gizmo
+        has_drag_offset = self._is_dragging_drawing and (
+            self._drag_delta_mm[0] != 0.0 or self._drag_delta_mm[1] != 0.0
+        )
+        if has_drag_offset:
+            painter.save()
+            sdx = self._drag_delta_mm[0] * self.zoom_px_per_mm
+            sdy = -self._drag_delta_mm[1] * self.zoom_px_per_mm
+            painter.translate(sdx, sdy)
+
         self._draw_trajectories(painter)
 
-        # 7. Draw Selection Bounding Box & Handles
         if self.transformed_elements and not self.simulation_active:
             self._draw_selection_gizmo(painter)
+
+        if has_drag_offset:
+            painter.restore()
 
         # 8. Draw Simulator Toolhead Marker (when active or moves loaded)
         if self.sim_state is not None and self.moves:
@@ -508,16 +521,23 @@ class BuildPlateCanvas(QWidget):
                 max_idx = self.sim_state.current_move_index
                 prog_in_last = self.sim_state.segment_progress
 
+            pan_x = self.pan_offset_px.x()
+            pan_y = self.pan_offset_px.y()
+            h = self.height()
+            z = self.zoom_px_per_mm
+
             # First pass: dimmed future moves when simulating
             if self.simulation_active and max_idx < len(self.moves) - 1:
                 pen_future = QPen(QColor(148, 163, 184, 40), 1.2)
-                painter.setPen(pen_future)
+                future_lines: list[QLineF] = []
                 for mv in self.moves[max_idx + 1 :]:
                     if mv.move_type == MovementType.DRAW:
-                        painter.drawLine(
-                            self.mm_to_screen(mv.start_x, mv.start_y),
-                            self.mm_to_screen(mv.end_x, mv.end_y),
-                        )
+                        p0 = QPointF(pan_x + mv.start_x * z, h - pan_y - mv.start_y * z)
+                        p1 = QPointF(pan_x + mv.end_x * z, h - pan_y - mv.end_y * z)
+                        future_lines.append(QLineF(p0, p1))
+                if future_lines:
+                    painter.setPen(pen_future)
+                    painter.drawLines(future_lines)
 
             # Level of Detail (LOD) subsampling when zoomed far out and many moves exist
             lod_stride = 1
@@ -527,18 +547,21 @@ class BuildPlateCanvas(QWidget):
             # Second pass: Travel moves
             if self.show_travel_moves:
                 pen_travel = QPen(QColor(56, 189, 248, 115), 1.0, Qt.PenStyle.DashLine)
-                painter.setPen(pen_travel)
+                travel_lines: list[QLineF] = []
                 for idx in range(0, max_idx + 1, lod_stride if not self.simulation_active else 1):
                     mv = self.moves[idx]
                     if mv.move_type == MovementType.TRAVEL:
-                        p0 = self.mm_to_screen(mv.start_x, mv.start_y)
+                        p0 = QPointF(pan_x + mv.start_x * z, h - pan_y - mv.start_y * z)
                         if idx == max_idx and prog_in_last < 1.0:
                             ex = mv.start_x + (mv.end_x - mv.start_x) * prog_in_last
                             ey = mv.start_y + (mv.end_y - mv.start_y) * prog_in_last
-                            p1 = self.mm_to_screen(ex, ey)
+                            p1 = QPointF(pan_x + ex * z, h - pan_y - ey * z)
                         else:
-                            p1 = self.mm_to_screen(mv.end_x, mv.end_y)
-                        painter.drawLine(p0, p1)
+                            p1 = QPointF(pan_x + mv.end_x * z, h - pan_y - mv.end_y * z)
+                        travel_lines.append(QLineF(p0, p1))
+                if travel_lines:
+                    painter.setPen(pen_travel)
+                    painter.drawLines(travel_lines)
 
             # Third pass: Pen-down drawing moves (highlighting out-of-bounds moves in red!)
             stroke_px = max(1.6, self.pen.tip_diameter_mm * self.zoom_px_per_mm)
@@ -550,16 +573,19 @@ class BuildPlateCanvas(QWidget):
             w_lim = self.machine.nominal_x_mm
             h_lim = self.machine.nominal_y_mm
 
+            draw_ok_lines: list[QLineF] = []
+            draw_err_lines: list[QLineF] = []
+
             for idx in range(0, max_idx + 1, lod_stride if not self.simulation_active else 1):
                 mv = self.moves[idx]
                 if mv.move_type == MovementType.DRAW:
-                    p0 = self.mm_to_screen(mv.start_x, mv.start_y)
+                    p0 = QPointF(pan_x + mv.start_x * z, h - pan_y - mv.start_y * z)
                     if idx == max_idx and prog_in_last < 1.0:
                         ex = mv.start_x + (mv.end_x - mv.start_x) * prog_in_last
                         ey = mv.start_y + (mv.end_y - mv.start_y) * prog_in_last
-                        p1 = self.mm_to_screen(ex, ey)
+                        p1 = QPointF(pan_x + ex * z, h - pan_y - ey * z)
                     else:
-                        p1 = self.mm_to_screen(mv.end_x, mv.end_y)
+                        p1 = QPointF(pan_x + mv.end_x * z, h - pan_y - mv.end_y * z)
 
                     out_of_bounds = (
                         mv.start_x < 0.0
@@ -571,8 +597,17 @@ class BuildPlateCanvas(QWidget):
                         or mv.start_y > h_lim
                         or mv.end_y > h_lim
                     )
-                    painter.setPen(pen_draw_err if out_of_bounds else pen_draw_ok)
-                    painter.drawLine(p0, p1)
+                    if out_of_bounds:
+                        draw_err_lines.append(QLineF(p0, p1))
+                    else:
+                        draw_ok_lines.append(QLineF(p0, p1))
+
+            if draw_ok_lines:
+                painter.setPen(pen_draw_ok)
+                painter.drawLines(draw_ok_lines)
+            if draw_err_lines:
+                painter.setPen(pen_draw_err)
+                painter.drawLines(draw_err_lines)
 
         # Also highlight selected individual SVG element if any
         if self.selected_element_id and self.transformed_elements:
@@ -802,6 +837,7 @@ class BuildPlateCanvas(QWidget):
                 ):
                     self._is_dragging_drawing = True
                     self._drag_start_mouse_mm = (mm_x, mm_y)
+                    self._drag_delta_mm = (0.0, 0.0)
                     self._drag_start_transform = DocumentTransform.from_dict(self.doc_transform.to_dict())
                     self.setCursor(Qt.CursorShape.SizeAllCursor)
                     event.accept()
@@ -832,10 +868,12 @@ class BuildPlateCanvas(QWidget):
         if self._is_dragging_drawing and self._drag_start_transform is not None:
             dx_mm = mm_x - self._drag_start_mouse_mm[0]
             dy_mm = mm_y - self._drag_start_mouse_mm[1]
+            self._drag_delta_mm = (dx_mm, dy_mm)
             new_t = DocumentTransform.from_dict(self._drag_start_transform.to_dict())
             new_t.pos_x_mm = round(self._drag_start_transform.pos_x_mm + dx_mm, 2)
             new_t.pos_y_mm = round(self._drag_start_transform.pos_y_mm + dy_mm, 2)
             self.transform_preview_changed.emit(new_t)
+            self.update()
             return
 
         self.update()
@@ -857,13 +895,21 @@ class BuildPlateCanvas(QWidget):
             self._is_dragging_drawing = False
             self.set_active_tool(self.active_tool)
             old_t = self._drag_start_transform
-            new_t = DocumentTransform.from_dict(self.doc_transform.to_dict())
+            dx_mm, dy_mm = self._drag_delta_mm
+            self._drag_delta_mm = (0.0, 0.0)
             self._drag_start_transform = None
+
+            new_t = DocumentTransform.from_dict(old_t.to_dict())
+            new_t.pos_x_mm = round(old_t.pos_x_mm + dx_mm, 2)
+            new_t.pos_y_mm = round(old_t.pos_y_mm + dy_mm, 2)
+            self.doc_transform = DocumentTransform.from_dict(new_t.to_dict())
+
             if (
                 abs(old_t.pos_x_mm - new_t.pos_x_mm) > 1e-4
                 or abs(old_t.pos_y_mm - new_t.pos_y_mm) > 1e-4
             ):
                 self.transform_dragged.emit(old_t, new_t)
+            self.update()
             event.accept()
 
     def keyPressEvent(self, event: QKeyEvent) -> None:

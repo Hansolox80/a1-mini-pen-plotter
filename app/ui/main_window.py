@@ -412,7 +412,7 @@ class MainWindow(QMainWindow):
         self.right_inspector.coordinate_flags_changed.connect(self._on_coordinate_flags_changed)
 
         # Canvas signals
-        self.canvas.transform_preview_changed.connect(self._apply_transform_direct)
+        self.canvas.transform_preview_changed.connect(self._on_canvas_transform_preview)
         self.canvas.transform_dragged.connect(self._on_canvas_transform_dragged)
 
         # Simulator signals
@@ -600,6 +600,11 @@ class MainWindow(QMainWindow):
         self.project.doc_transform = DocumentTransform.from_dict(new_t.to_dict())
         self.project.dirty = True
         self.recompute_pipeline()
+
+    def _on_canvas_transform_preview(self, new_t: DocumentTransform) -> None:
+        self.project.doc_transform.pos_x_mm = new_t.pos_x_mm
+        self.project.doc_transform.pos_y_mm = new_t.pos_y_mm
+        self.right_inspector.update_position_preview(new_t.pos_x_mm, new_t.pos_y_mm)
 
     def _on_inspector_transform_changed(self, new_t: DocumentTransform) -> None:
         old_t = DocumentTransform.from_dict(self.project.doc_transform.to_dict())

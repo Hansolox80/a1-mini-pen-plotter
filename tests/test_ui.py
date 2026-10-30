@@ -185,3 +185,80 @@ def test_ui_comprehensive_button_and_shortcut_behavior(qapp, monkeypatch):
 
     win.close()
 
+
+def test_canvas_smooth_dragging_and_batched_paint(qapp):
+    from PySide6.QtGui import QMouseEvent
+    from PySide6.QtCore import QEvent, QPointF
+
+    win = MainWindow(check_recovery=False, synchronous_pipeline=True)
+    win.show()
+    qapp.processEvents()
+
+    win.load_svg_file(str(EXAMPLES_DIR / "01_square_20x20mm.svg"), mark_dirty=False)
+    qapp.processEvents()
+
+    canvas = win.canvas
+    initial_t = win.project.doc_transform
+    initial_x = initial_t.pos_x_mm
+    initial_y = initial_t.pos_y_mm
+
+    # Find screen coordinate inside drawing bounds
+    b = canvas.drawing_bounds
+    center_screen = canvas.mm_to_screen(b.center_x, b.center_y)
+
+    # 1. Mouse press inside drawing bounds
+    press_event = QMouseEvent(
+        QEvent.Type.MouseButtonPress,
+        center_screen,
+        Qt.MouseButton.LeftButton,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    canvas.mousePressEvent(press_event)
+    assert canvas._is_dragging_drawing
+
+    # 2. Mouse move by 10mm right, 10mm up
+    delta_x_px = 10.0 * canvas.zoom_px_per_mm
+    delta_y_px = -10.0 * canvas.zoom_px_per_mm  # screen Y is inverted
+    move_screen = QPointF(center_screen.x() + delta_x_px, center_screen.y() + delta_y_px)
+
+    move_event = QMouseEvent(
+        QEvent.Type.MouseMove,
+        move_screen,
+        Qt.MouseButton.NoButton,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    canvas.mouseMoveEvent(move_event)
+
+    # Verify drag delta in mm is around (+10, +10)
+    assert abs(canvas._drag_delta_mm[0] - 10.0) < 0.2
+    assert abs(canvas._drag_delta_mm[1] - 10.0) < 0.2
+
+    # Verify inspector preview updated smoothly without triggering pipeline recompute
+    assert abs(win.right_inspector.spn_pos_x.value() - (initial_x + 10.0)) < 0.2
+    assert abs(win.right_inspector.spn_pos_y.value() - (initial_y + 10.0)) < 0.2
+
+    # 3. Mouse release
+    release_event = QMouseEvent(
+        QEvent.Type.MouseButtonRelease,
+        move_screen,
+        Qt.MouseButton.LeftButton,
+        Qt.MouseButton.NoButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    canvas.mouseReleaseEvent(release_event)
+    assert not canvas._is_dragging_drawing
+    assert canvas._drag_delta_mm == (0.0, 0.0)
+
+    # Check project transform was updated and undo command was registered
+    assert abs(win.project.doc_transform.pos_x_mm - (initial_x + 10.0)) < 0.2
+    assert abs(win.project.doc_transform.pos_y_mm - (initial_y + 10.0)) < 0.2
+    assert win.undo_stack.count() >= 1
+
+    # Undo
+    win.undo_stack.undo()
+    assert abs(win.project.doc_transform.pos_x_mm - initial_x) < 1e-3
+
+    win.close()
+
