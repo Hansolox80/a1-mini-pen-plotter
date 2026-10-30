@@ -111,7 +111,15 @@ def parse_transform_matrix(transform_str: Optional[str]) -> np.ndarray:
 
     for match in _TRANSFORM_RE.finditer(transform_str):
         func = match.group(1).strip()
-        args = [float(x) for x in _NUMBER_RE.findall(match.group(2))]
+        raw_args: list[float] = []
+        for x in _NUMBER_RE.findall(match.group(2)):
+            try:
+                v = float(x)
+                if math.isfinite(v):
+                    raw_args.append(v)
+            except (ValueError, TypeError):
+                continue
+        args = raw_args
         if not args:
             continue
 
@@ -141,12 +149,21 @@ def parse_transform_matrix(transform_str: Optional[str]) -> np.ndarray:
                 t = rot
         elif func == "skewX":
             ang = math.radians(args[0])
-            t = np.array([[1.0, math.tan(ang), 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]], dtype=float)
+            tan_val = math.tan(ang)
+            tan_val = max(-1e6, min(1e6, tan_val)) if math.isfinite(tan_val) else 0.0
+            t = np.array([[1.0, tan_val, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]], dtype=float)
         elif func == "skewY":
             ang = math.radians(args[0])
-            t = np.array([[1.0, 0.0, 0.0], [math.tan(ang), 1.0, 0.0], [0.0, 0.0, 1.0]], dtype=float)
+            tan_val = math.tan(ang)
+            tan_val = max(-1e6, min(1e6, tan_val)) if math.isfinite(tan_val) else 0.0
+            t = np.array([[1.0, 0.0, 0.0], [tan_val, 1.0, 0.0], [0.0, 0.0, 1.0]], dtype=float)
 
-        mat = mat @ t
+        try:
+            res = mat @ t
+            if np.all(np.isfinite(res)):
+                mat = res
+        except Exception:
+            pass
 
     return mat
 
@@ -158,9 +175,20 @@ def apply_matrix_to_polyline(
     """Applies a 3x3 affine transformation matrix to a list of 2D points."""
     if not polyline:
         return []
+    if not np.all(np.isfinite(matrix)):
+        return [(float(p[0]), float(p[1])) for p in polyline if math.isfinite(p[0]) and math.isfinite(p[1])]
     pts = np.array([[p[0], p[1], 1.0] for p in polyline], dtype=float)
-    transformed = (matrix @ pts.T).T
-    return [(float(row[0]), float(row[1])) for row in transformed]
+    try:
+        transformed = (matrix @ pts.T).T
+    except Exception:
+        return [(float(p[0]), float(p[1])) for p in polyline if math.isfinite(p[0]) and math.isfinite(p[1])]
+
+    result: list[tuple[float, float]] = []
+    for row in transformed:
+        x, y = float(row[0]), float(row[1])
+        if math.isfinite(x) and math.isfinite(y) and abs(x) < 1e7 and abs(y) < 1e7:
+            result.append((x, y))
+    return result
 
 
 def matrix_max_scale(matrix: np.ndarray) -> float:
@@ -168,7 +196,10 @@ def matrix_max_scale(matrix: np.ndarray) -> float:
     sub = matrix[:2, :2]
     try:
         s = np.linalg.svd(sub, compute_uv=False)
-        return max(1e-6, float(np.max(s)))
+        val = float(np.max(s))
+        if not math.isfinite(val):
+            return 1.0
+        return max(1e-6, min(val, 1e6))
     except Exception:
         return 1.0
 
@@ -260,13 +291,24 @@ def parse_svg_path_d(
             val = float(tokens[idx])
             if not math.isfinite(val):
                 val = 0.0
-        except (ValueError, TypeError):
+            elif abs(val) > 1e7:
+                val = math.copysign(1e7, val)
+        except (ValueError, TypeError, IndexError):
             val = 0.0
         idx += 1
         return val
 
     def has_more_numbers() -> bool:
-        return idx < n and not tokens[idx].isalpha()
+        if idx >= n:
+            return False
+        tok = tokens[idx]
+        if tok.isalpha():
+            return False
+        try:
+            float(tok)
+            return True
+        except (ValueError, TypeError):
+            return False
 
     while idx < n:
         if tokens[idx].isalpha():
@@ -287,7 +329,7 @@ def parse_svg_path_d(
                     cur_x, cur_y = x, y
 
                 if first:
-                    if len(current_poly) >= 2:
+                    if len(current_poly) >= 1:
                         polylines.append(current_poly)
                     current_poly = [(cur_x, cur_y)]
                     start_x, start_y = cur_x, cur_y
@@ -303,7 +345,7 @@ def parse_svg_path_d(
             if current_poly:
                 if math.hypot(current_poly[-1][0] - start_x, current_poly[-1][1] - start_y) > 1e-6:
                     current_poly.append((start_x, start_y))
-                if len(current_poly) >= 2:
+                if len(current_poly) >= 1:
                     polylines.append(current_poly)
                 current_poly = []
             cur_x, cur_y = start_x, start_y
@@ -462,7 +504,7 @@ def parse_svg_path_d(
         else:
             break
 
-    if len(current_poly) >= 2:
+    if len(current_poly) >= 1:
         polylines.append(current_poly)
 
     return (polylines, any_closed)
@@ -476,13 +518,18 @@ def _ellipse_to_polyline(
     tolerance_local: float = 0.05,
 ) -> list[tuple[float, float]]:
     """Generates a closed high-precision polyline for a circle or ellipse, guaranteeing exact cardinal extrema."""
+    if not (math.isfinite(cx) and math.isfinite(cy) and math.isfinite(rx) and math.isfinite(ry)):
+        return []
+    rx = abs(rx)
+    ry = abs(ry)
     max_r = max(rx, ry)
     if max_r <= 1e-9:
-        return []
-    tol = max(0.002, float(tolerance_local))
+        return [(cx, cy)]
+    tol = max(0.002, float(tolerance_local)) if math.isfinite(tolerance_local) else 0.05
     if max_r > tol:
-        step_ang = 2.0 * math.acos(max(0.0, 1.0 - tol / max_r))
-        n_Quarter = max(16, int(math.ceil((math.pi * 0.5) / step_ang)))
+        ratio = max(0.0, min(1.0, 1.0 - tol / max_r))
+        step_ang = 2.0 * math.acos(ratio)
+        n_Quarter = max(16, min(64, int(math.ceil((math.pi * 0.5) / max(1e-4, step_ang)))))
     else:
         n_Quarter = 16
     steps = n_Quarter * 4  # Multiple of 4 guarantees exact points at 0, 90, 180, 270 degrees!
@@ -504,6 +551,8 @@ def _rect_to_polyline(
     tolerance_local: float = 0.05,
 ) -> list[tuple[float, float]]:
     """Generates a closed polyline for a `<rect>`, including rounded corners if specified."""
+    if not (math.isfinite(x) and math.isfinite(y) and math.isfinite(w) and math.isfinite(h)):
+        return []
     if w <= 0.0 or h <= 0.0:
         return []
     if rx <= 1e-6 and ry <= 1e-6:
@@ -599,16 +648,88 @@ class SvgParser:
 
     def parse_file(self, file_path: str | Path) -> ParsedSvgDocument:
         path = Path(file_path)
-        raw_content = path.read_text(encoding="utf-8", errors="replace")
+        try:
+            raw_content = path.read_text(encoding="utf-8", errors="replace")
+        except Exception as exc:
+            return ParsedSvgDocument(
+                file_path=str(path),
+                width_mm=180.0,
+                height_mm=180.0,
+                viewbox=None,
+                original_units="mm",
+                elements=[],
+                warnings=[
+                    SvgWarning(
+                        severity="critical",
+                        message=f"Failed to read file on disk: {exc}",
+                        element_id="<file>",
+                        element_tag="file",
+                    )
+                ],
+                raw_svg_content="",
+            )
         return self.parse_string(raw_content, file_path=str(path))
 
     def parse_string(self, svg_text: str, file_path: str = "<memory>") -> ParsedSvgDocument:
-        root: ET.Element = SafeET.fromstring(svg_text)
-        if _local_tag(root.tag).lower() != "svg":
-            raise ValueError("Root XML element is not <svg>.")
-
-        # Strip massive raw string if SVG is very large (> 256KB) to conserve RAM
         stored_raw = svg_text if len(svg_text) <= 262144 else ""
+        if not svg_text or not svg_text.strip():
+            return ParsedSvgDocument(
+                file_path=file_path,
+                width_mm=180.0,
+                height_mm=180.0,
+                viewbox=None,
+                original_units="mm",
+                elements=[],
+                warnings=[
+                    SvgWarning(
+                        severity="critical",
+                        message="SVG document is empty.",
+                        element_id="<root>",
+                        element_tag="svg",
+                    )
+                ],
+                raw_svg_content="",
+            )
+
+        try:
+            root: ET.Element = SafeET.fromstring(svg_text)
+        except Exception as exc:
+            return ParsedSvgDocument(
+                file_path=file_path,
+                width_mm=180.0,
+                height_mm=180.0,
+                viewbox=None,
+                original_units="mm",
+                elements=[],
+                warnings=[
+                    SvgWarning(
+                        severity="critical",
+                        message=f"SVG XML syntax error: {exc}",
+                        element_id="<root>",
+                        element_tag="svg",
+                    )
+                ],
+                raw_svg_content=stored_raw,
+            )
+
+        if _local_tag(root.tag).lower() != "svg":
+            return ParsedSvgDocument(
+                file_path=file_path,
+                width_mm=180.0,
+                height_mm=180.0,
+                viewbox=None,
+                original_units="mm",
+                elements=[],
+                warnings=[
+                    SvgWarning(
+                        severity="critical",
+                        message=f"Root XML element is <{root.tag}> instead of <svg>.",
+                        element_id="<root>",
+                        element_tag=root.tag,
+                    )
+                ],
+                raw_svg_content=stored_raw,
+            )
 
         # 1. Parse viewBox, width, height, and root unit conversion matrix
         vb_str = root.get("viewBox") or root.get("viewbox")

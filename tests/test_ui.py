@@ -27,7 +27,7 @@ def qapp():
 
 
 def test_main_window_startup_and_pipeline(qapp):
-    win = MainWindow(check_recovery=False)
+    win = MainWindow(check_recovery=False, synchronous_pipeline=True)
     win.show()
     qapp.processEvents()
 
@@ -79,7 +79,7 @@ def test_main_window_startup_and_pipeline(qapp):
 
 
 def test_dialogs_instantiation_and_logic(qapp):
-    win = MainWindow(check_recovery=False)
+    win = MainWindow(check_recovery=False, synchronous_pipeline=True)
 
     # 1. Pen Calibration Wizard (6 steps)
     wiz = PenCalibrationWizard(win.project.pen_profile, win.project.machine_profile, win)

@@ -344,8 +344,22 @@ class SafetyValidator:
                     )
                 )
 
+            # Check zero or negative feedrate
+            if mv.feed_rate_mm_min <= 0.0:
+                add_issue_throttled(
+                    ValidationIssue(
+                        severity=ValidationSeverity.CRITICAL,
+                        code="ZERO_OR_NEGATIVE_FEEDRATE",
+                        title="Zero or Negative Feedrate Detected",
+                        message=f"Movement has non-positive feedrate {mv.feed_rate_mm_min:.1f} mm/min.",
+                        line_number=mv.gcode_line_number,
+                        command=mv.gcode_command,
+                        coordinates=(mv.end_x, mv.end_y, mv.end_z),
+                    )
+                )
+
             # Check nominal machine boundaries (0 .. 180 mm)
-            if mv.end_x > self.machine.nominal_x_mm + 1e-4 or mv.end_y > self.machine.nominal_y_mm + 1e-4:
+            if mv.end_x > self.machine.nominal_x_mm + 1e-5 or mv.end_y > self.machine.nominal_y_mm + 1e-5:
                 add_issue_throttled(
                     ValidationIssue(
                         severity=ValidationSeverity.CRITICAL,
@@ -364,10 +378,10 @@ class SafetyValidator:
             # Check configured usable safety margins for drawing moves
             if mv.move_type == MovementType.DRAW:
                 if (
-                    mv.end_x < self.machine.usable_min_x - 1e-3
-                    or mv.end_x > self.machine.usable_max_x + 1e-3
-                    or mv.end_y < self.machine.usable_min_y - 1e-3
-                    or mv.end_y > self.machine.usable_max_y + 1e-3
+                    mv.end_x < self.machine.usable_min_x - 1e-5
+                    or mv.end_x > self.machine.usable_max_x + 1e-5
+                    or mv.end_y < self.machine.usable_min_y - 1e-5
+                    or mv.end_y > self.machine.usable_max_y + 1e-5
                 ):
                     add_issue_throttled(
                         ValidationIssue(
@@ -615,24 +629,37 @@ class SafetyValidator:
                         )
                     )
 
-                cur_x = params.get("X", cur_x)
-                cur_y = params.get("Y", cur_y)
-                cur_z = params.get("Z", cur_z)
-
-                # Check G-code coordinate against machine boundaries
-                if cur_x < -1e-4 or cur_y < -1e-4:
+                if "F" in params and params["F"] <= 0.0:
                     report.issues.append(
                         ValidationIssue(
                             severity=ValidationSeverity.CRITICAL,
-                            code="GCODE_NEGATIVE_COORDINATE",
-                            title="G-code Command Targets Negative Machine Coordinate",
-                            message=f"Line {idx} moves head to negative coordinate (X={cur_x:.3f}, Y={cur_y:.3f}).",
+                            code="GCODE_ZERO_OR_NEGATIVE_FEEDRATE",
+                            title="Zero or Negative Feedrate in G-code",
+                            message=f"Line {idx} specifies non-positive feedrate F{params['F']}.",
                             line_number=idx,
                             command=raw_line.strip(),
                             coordinates=(cur_x, cur_y, cur_z),
                         )
                     )
-                if cur_x > self.machine.nominal_x_mm + 1e-4 or cur_y > self.machine.nominal_y_mm + 1e-4:
+
+                cur_x = params.get("X", cur_x)
+                cur_y = params.get("Y", cur_y)
+                cur_z = params.get("Z", cur_z)
+
+                # Check G-code coordinate against machine boundaries
+                if cur_x < -1e-4 or cur_y < -1e-4 or cur_z < -1e-4:
+                    report.issues.append(
+                        ValidationIssue(
+                            severity=ValidationSeverity.CRITICAL,
+                            code="GCODE_NEGATIVE_COORDINATE",
+                            title="G-code Command Targets Negative Machine Coordinate",
+                            message=f"Line {idx} moves head to negative coordinate (X={cur_x:.3f}, Y={cur_y:.3f}, Z={cur_z:.3f}).",
+                            line_number=idx,
+                            command=raw_line.strip(),
+                            coordinates=(cur_x, cur_y, cur_z),
+                        )
+                    )
+                if cur_x > self.machine.nominal_x_mm + 1e-5 or cur_y > self.machine.nominal_y_mm + 1e-5:
                     report.issues.append(
                         ValidationIssue(
                             severity=ValidationSeverity.CRITICAL,
@@ -666,5 +693,20 @@ class SafetyValidator:
                     title="Missing Explicit Absolute Positioning Command (G90)",
                     message="G-code must explicitly set G90 (absolute positioning) before executing movements.",
                     line_number=1,
+                )
+            )
+
+        # Check that final G-code position leaves pen lifted
+        if report.checked_gcode_lines > 0 and cur_z < self.pen.pen_up_z_mm - 0.05:
+            report.issues.append(
+                ValidationIssue(
+                    severity=ValidationSeverity.CRITICAL,
+                    code="GCODE_UNSAFE_FINAL_Z",
+                    title="G-code File Ends With Lowered Pen",
+                    message=(
+                        f"G-code trajectory terminates with pen at Z={cur_z:.2f} mm without lifting "
+                        f"to safe Pen-Up height ({self.pen.pen_up_z_mm:.2f} mm)."
+                    ),
+                    coordinates=(cur_x, cur_y, cur_z),
                 )
             )

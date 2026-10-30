@@ -164,44 +164,64 @@ def optimize_min_travel_2opt(
     allow_reversal: bool = True,
     max_iterations: int = 40,
 ) -> list[DrawablePath]:
-    """Nearest-neighbor initialization followed by 2-Opt local search to minimize total travel distance."""
+    """Nearest-neighbor initialization followed by high-speed 2-Opt local search with O(1) edge delta evaluation."""
     ordered = optimize_nearest_neighbor(paths, origin=origin, allow_reversal=allow_reversal)
     n = len(ordered)
-    if n < 3 or n > 600:
+    if n < 3:
         return ordered
 
     def dist(a: tuple[float, float], b: tuple[float, float]) -> float:
         return math.hypot(a[0] - b[0], a[1] - b[1])
 
+    # Candidate windowing: examine close neighbors (or up to 80 paths ahead) for massive speedup
+    window_size = min(n, 80) if n > 120 else n
+
     for _ in range(max_iterations):
         improved = False
         for i in range(n - 1):
-            prev_pt = origin if i == 0 else ordered[i - 1].end
-            for j in range(i + 1, n):
-                next_pt = ordered[j + 1].start if j + 1 < n else None
+            prev_end = origin if i == 0 else ordered[i - 1].end
+            pi = ordered[i]
+            d_enter_old = dist(prev_end, pi.start)
 
-                # Current cost of edges entering i and leaving j
-                old_cost = dist(prev_pt, ordered[i].start)
-                for k in range(i, j):
-                    old_cost += dist(ordered[k].end, ordered[k + 1].start)
-                if next_pt is not None:
-                    old_cost += dist(ordered[j].end, next_pt)
+            max_j = min(n, i + window_size)
+            for j in range(i + 1, max_j):
+                pj = ordered[j]
+                next_start = ordered[j + 1].start if j + 1 < n else None
+                d_exit_old = dist(pj.end, next_start) if next_start is not None else 0.0
 
-                # Candidate: reverse subsequence i..j (and reverse each path inside if allow_reversal)
                 if allow_reversal:
-                    cand_sub = [p.reversed() if not p.is_closed else p for p in reversed(ordered[i : j + 1])]
+                    # When reversing subsequence with internal path flipping:
+                    # pj enters from its end (unless closed), pi exits from its start (unless closed)
+                    pj_rev_entry = pj.end if not pj.is_closed else pj.start
+                    pi_rev_exit = pi.start if not pi.is_closed else pi.end
+
+                    d_enter_new = dist(prev_end, pj_rev_entry)
+                    d_exit_new = dist(pi_rev_exit, next_start) if next_start is not None else 0.0
+                    delta = (d_enter_new + d_exit_new) - (d_enter_old + d_exit_old)
+
+                    if delta < -1e-4:
+                        sub = [p.reversed() if not p.is_closed else p for p in reversed(ordered[i : j + 1])]
+                        ordered[i : j + 1] = sub
+                        improved = True
+                        break
                 else:
-                    cand_sub = list(reversed(ordered[i : j + 1]))
+                    # Unreversed internal paths
+                    d_enter_new = dist(prev_end, pj.start)
+                    d_exit_new = dist(pi.end, next_start) if next_start is not None else 0.0
 
-                new_cost = dist(prev_pt, cand_sub[0].start)
-                for k in range(len(cand_sub) - 1):
-                    new_cost += dist(cand_sub[k].end, cand_sub[k + 1].start)
-                if next_pt is not None:
-                    new_cost += dist(cand_sub[-1].end, next_pt)
+                    # For unreversed 2-opt, we must also compare internal reverse path cost if asymmetric
+                    old_sub_cost = sum(dist(ordered[k].end, ordered[k + 1].start) for k in range(i, j))
+                    new_sub_cost = sum(dist(ordered[k].start, ordered[k - 1].end) for k in range(j, i, -1))
+                    delta = (d_enter_new + d_exit_new + new_sub_cost) - (d_enter_old + d_exit_old + old_sub_cost)
 
-                if new_cost + 1e-4 < old_cost:
-                    ordered[i : j + 1] = cand_sub
-                    improved = True
+                    if delta < -1e-4:
+                        ordered[i : j + 1] = list(reversed(ordered[i : j + 1]))
+                        improved = True
+                        break
+
+            if improved:
+                break
+
         if not improved:
             break
 
@@ -228,7 +248,7 @@ def merge_contiguous_paths(
     for nxt in paths[1:]:
         cur = merged[-1]
         gap = math.hypot(nxt.start[0] - cur.end[0], nxt.start[1] - cur.end[1])
-        if gap <= merge_threshold_mm and cur.layer == nxt.layer:
+        if gap <= merge_threshold_mm and cur.layer == nxt.layer and len(nxt.points) > 1 and len(cur.points) > 1:
             if gap < 1e-6:
                 cur.points.extend(nxt.points[1:])
             else:
@@ -303,12 +323,13 @@ class ToolpathGenerator:
                 cleaned = deduplicate_points(poly, min_dist_mm=self.opt_settings.min_segment_length_mm)
                 if self.opt_settings.simplify_tolerance_mm > 0:
                     cleaned = simplify_polyline(cleaned, tolerance_mm=self.opt_settings.simplify_tolerance_mm)
-                if len(cleaned) < 2:
+                if len(cleaned) < 1:
                     continue
 
                 machine_pts = [transformer.plate_to_machine_xy(px, py) for px, py in cleaned]
                 is_closed = (
-                    math.hypot(
+                    len(machine_pts) >= 2
+                    and math.hypot(
                         machine_pts[0][0] - machine_pts[-1][0],
                         machine_pts[0][1] - machine_pts[-1][1],
                     )
@@ -421,7 +442,11 @@ class ToolpathGenerator:
             moves.append(mv_down)
             move_idx += 1
             cur_z = draw_z
-            cur_z = draw_z
+
+            min_x = min(min_x, sx)
+            max_x = max(max_x, sx)
+            min_y = min(min_y, sy)
+            max_y = max(max_y, sy)
 
             # 3. Drawing segments
             for pt in dpath.points[1:]:

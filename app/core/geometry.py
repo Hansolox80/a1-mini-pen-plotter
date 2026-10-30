@@ -21,24 +21,47 @@ def flatten_cubic_bezier(
     tolerance_mm: float = 0.08,
 ) -> list[tuple[float, float]]:
     """Adaptively flattens a cubic Bézier curve into a polyline within `tolerance_mm` using vectorized NumPy evaluation."""
-    tol = max(0.002, float(tolerance_mm))
+    tol = max(0.002, float(tolerance_mm)) if math.isfinite(tolerance_mm) else 0.08
 
-    # Calculate deviation norm (2nd derivative bound) using NumPy
-    pt0 = np.array(p0, dtype=np.float64)
-    pt1 = np.array(p1, dtype=np.float64)
-    pt2 = np.array(p2, dtype=np.float64)
-    pt3 = np.array(p3, dtype=np.float64)
+    # Defensively sanitize input control points against non-finite or astronomical coordinates
+    safe_pts = []
+    for p in (p0, p1, p2, p3):
+        try:
+            x, y = float(p[0]), float(p[1])
+            if not math.isfinite(x) or abs(x) > 1e12:
+                x = 0.0
+            if not math.isfinite(y) or abs(y) > 1e12:
+                y = 0.0
+            safe_pts.append((x, y))
+        except (ValueError, TypeError, IndexError):
+            safe_pts.append((0.0, 0.0))
 
-    d1 = np.linalg.norm(pt0 - 2.0 * pt1 + pt2)
-    d2 = np.linalg.norm(pt1 - 2.0 * pt2 + pt3)
-    max_d = max(d1, d2)
+    sp0, sp1, sp2, sp3 = safe_pts
+    pt0 = np.array(sp0, dtype=np.float64)
+    pt1 = np.array(sp1, dtype=np.float64)
+    pt2 = np.array(sp2, dtype=np.float64)
+    pt3 = np.array(sp3, dtype=np.float64)
 
-    # If practically straight collinear line segment, return endpoints immediately
-    if max_d < 1e-7:
-        return [p0, p3]
+    try:
+        d1 = float(np.linalg.norm(pt0 - 2.0 * pt1 + pt2))
+        d2 = float(np.linalg.norm(pt1 - 2.0 * pt2 + pt3))
+        max_d = max(d1, d2)
+    except Exception:
+        max_d = 0.0
 
-    # Wang's formula for Bézier subdivision steps within tolerance
-    steps = int(np.ceil(np.sqrt((3.0 * max_d) / (4.0 * tol))))
+    # If practically straight collinear line segment or degenerate zero-length, return endpoints immediately
+    if not math.isfinite(max_d) or max_d < 1e-7:
+        return [sp0, sp3]
+
+    # Wang's formula for Bézier subdivision steps within tolerance (protected against float overflow)
+    try:
+        val = np.sqrt((3.0 * max_d) / (4.0 * tol))
+        if not math.isfinite(val) or val > 64:
+            steps = 64
+        else:
+            steps = int(np.ceil(val))
+    except (OverflowError, ValueError):
+        steps = 64
     steps = max(2, min(steps, 64))
 
     t = np.linspace(0.0, 1.0, steps + 1, dtype=np.float64)[:, np.newaxis]
@@ -51,7 +74,12 @@ def flatten_cubic_bezier(
     b3 = t ** 3
 
     curve_pts = b0 * pt0 + b1 * pt1 + b2 * pt2 + b3 * pt3
-    return [(float(x), float(y)) for x, y in curve_pts]
+    result: list[tuple[float, float]] = []
+    for x, y in curve_pts:
+        fx, fy = float(x), float(y)
+        if math.isfinite(fx) and math.isfinite(fy):
+            result.append((fx, fy))
+    return result if result else [sp0, sp3]
 
 
 def flatten_quadratic_bezier(
@@ -77,17 +105,29 @@ def flatten_svg_arc(
     tolerance_mm: float = 0.08,
 ) -> list[tuple[float, float]]:
     """Flattens an SVG elliptical arc (W3C SVG 1.1 F.6) into a polyline."""
-    x1, y1 = p0
-    x2, y2 = p1
-    if math.hypot(x2 - x1, y2 - y1) < 1e-9:
-        return [p0]
+    # Defensively sanitize endpoints
+    try:
+        x1 = float(p0[0]) if math.isfinite(p0[0]) and abs(p0[0]) < 1e12 else 0.0
+        y1 = float(p0[1]) if math.isfinite(p0[1]) and abs(p0[1]) < 1e12 else 0.0
+        x2 = float(p1[0]) if math.isfinite(p1[0]) and abs(p1[0]) < 1e12 else 0.0
+        y2 = float(p1[1]) if math.isfinite(p1[1]) and abs(p1[1]) < 1e12 else 0.0
+    except (ValueError, TypeError, IndexError):
+        return [(0.0, 0.0)]
 
-    rx = abs(rx)
-    ry = abs(ry)
-    if rx < 1e-9 or ry < 1e-9:
-        return [p0, p1]
+    p0_safe = (x1, y1)
+    p1_safe = (x2, y2)
 
-    phi = math.radians(x_axis_rotation_deg % 360.0)
+    dist = math.hypot(x2 - x1, y2 - y1)
+    if not math.isfinite(dist) or dist < 1e-9:
+        return [p0_safe]
+
+    rx = abs(float(rx)) if math.isfinite(rx) else 0.0
+    ry = abs(float(ry)) if math.isfinite(ry) else 0.0
+    if rx < 1e-9 or ry < 1e-9 or rx > 1e12 or ry > 1e12:
+        return [p0_safe, p1_safe]
+
+    rot_deg = float(x_axis_rotation_deg) if math.isfinite(x_axis_rotation_deg) else 0.0
+    phi = math.radians(rot_deg % 360.0)
     cos_phi = math.cos(phi)
     sin_phi = math.sin(phi)
 
@@ -98,6 +138,8 @@ def flatten_svg_arc(
 
     # Ensure radii are large enough
     lam = (x1p * x1p) / (rx * rx) + (y1p * y1p) / (ry * ry)
+    if not math.isfinite(lam):
+        return [p0_safe, p1_safe]
     if lam > 1.0:
         scale = math.sqrt(lam)
         rx *= scale
@@ -123,7 +165,7 @@ def flatten_svg_arc(
     def vec_angle(ux: float, uy: float, vx: float, vy: float) -> float:
         dot = ux * vx + uy * vy
         mag = math.hypot(ux, uy) * math.hypot(vx, vy)
-        if mag < 1e-12:
+        if mag < 1e-12 or not math.isfinite(mag):
             return 0.0
         cos_val = max(-1.0, min(1.0, dot / mag))
         ang = math.acos(cos_val)
@@ -145,14 +187,23 @@ def flatten_svg_arc(
         dtheta += 2.0 * math.pi
 
     max_r = max(rx, ry)
-    tol = max(0.005, float(tolerance_mm))
-    if max_r > tol:
-        step_angle = 2.0 * math.acos(max(0.0, 1.0 - tol / max_r))
+    tol = max(0.005, float(tolerance_mm)) if math.isfinite(tolerance_mm) else 0.08
+    if max_r > tol and math.isfinite(max_r):
+        ratio = max(0.0, min(1.0, 1.0 - tol / max_r))
+        step_angle = 2.0 * math.acos(ratio)
         step_angle = max(0.02, min(step_angle, math.pi / 8.0))
     else:
         step_angle = math.pi / 8.0
 
-    steps = max(4, int(math.ceil(abs(dtheta) / step_angle)))
+    try:
+        val = abs(dtheta) / step_angle
+        if not math.isfinite(val) or val > 128:
+            steps = 128
+        else:
+            steps = max(4, int(math.ceil(val)))
+    except (OverflowError, ValueError):
+        steps = 128
+
     pts: list[tuple[float, float]] = []
     for i in range(steps + 1):
         t = theta1 + dtheta * (i / steps)
@@ -160,10 +211,13 @@ def flatten_svg_arc(
         st = math.sin(t)
         px = cos_phi * rx * ct - sin_phi * ry * st + cx
         py = sin_phi * rx * ct + cos_phi * ry * st + cy
-        pts.append((px, py))
+        if math.isfinite(px) and math.isfinite(py):
+            pts.append((px, py))
 
-    pts[0] = p0
-    pts[-1] = p1
+    if not pts:
+        return [p0_safe, p1_safe]
+    pts[0] = p0_safe
+    pts[-1] = p1_safe
     return pts
 
 
@@ -272,7 +326,7 @@ def generate_hatch_lines(
     spacing_mm: float = 1.0,
     angle_deg: float = 45.0,
 ) -> list[list[tuple[float, float]]]:
-    """Generates clipped linear hatch paths across a list of Shapely Polygons."""
+    """Generates clipped linear hatch paths across a list of Shapely Polygons with vectorized rotation."""
     step = max(0.15, float(spacing_mm))
     merged = unary_union(polygons)
     if merged.is_empty:
@@ -287,11 +341,22 @@ def generate_hatch_lines(
     pad = step * 2.0
 
     y_values = np.arange(min_y + step * 0.5, max_y, step)
+    if len(y_values) == 0:
+        return []
+
+    # Fast trigonometry for inverse rotation (pure arithmetic, avoids heavy GEOS object allocations)
+    rad = math.radians(angle_deg)
+    cos_a = math.cos(rad)
+    sin_a = math.sin(rad)
+
+    # Batch create scan lines and intersect via Shapely
+    lines = [LineString([(min_x - pad, float(y_val)), (max_x + pad, float(y_val))]) for y_val in y_values]
+    import shapely
+    clipped_lines = shapely.intersection(lines, rotated)
+
     hatch_polylines: list[list[tuple[float, float]]] = []
 
-    for row_idx, y_val in enumerate(y_values):
-        scan_line = LineString([(min_x - pad, float(y_val)), (max_x + pad, float(y_val))])
-        clipped = rotated.intersection(scan_line)
+    for row_idx, clipped in enumerate(clipped_lines):
         if clipped.is_empty:
             continue
 
@@ -306,17 +371,23 @@ def generate_hatch_lines(
                     segments.append(g)
 
         # Alternate scan direction on odd rows to reduce pen travel
-        if row_idx % 2 == 1:
+        reverse_row = (row_idx % 2 == 1)
+        if reverse_row:
             segments.reverse()
 
         for seg in segments:
             if seg.length < 0.05:
                 continue
-            unrotated = shapely_rotate(seg, angle_deg, origin=(cx, cy), use_radians=False)
-            coords = [(float(x), float(y)) for x, y in unrotated.coords]
-            if row_idx % 2 == 1:
+            coords = list(seg.coords)
+            if reverse_row:
                 coords.reverse()
-            hatch_polylines.append(coords)
+
+            # Vectorized unrotation of points around centroid (cx, cy)
+            unrotated = [
+                (cx + (x - cx) * cos_a - (y - cy) * sin_a, cy + (x - cx) * sin_a + (y - cy) * cos_a)
+                for x, y in coords
+            ]
+            hatch_polylines.append(unrotated)
 
     return hatch_polylines
 

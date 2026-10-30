@@ -1,10 +1,15 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller specification for A1 Mini Pen Plotter standalone Windows distribution."""
+"""PyInstaller specification for A1 Mini Pen Plotter cross-platform distribution (Windows, Linux, macOS)."""
 
 from pathlib import Path
+import sys
 
 block_cipher = None
 project_root = Path(SPECPATH)
+
+is_windows = sys.platform.startswith("win")
+is_macos = sys.platform == "darwin"
+is_linux = sys.platform.startswith("linux")
 
 datas = [
     (str(project_root / "app" / "resources"), "app/resources"),
@@ -77,6 +82,9 @@ a = Analysis(
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
+version_file = str(project_root / "scripts" / "version_info.txt") if is_windows else None
+icon_file = str(project_root / "app" / "resources" / "icon.ico") if is_windows else str(project_root / "app" / "resources" / "icon.png")
+
 exe = EXE(
     pyz,
     a.scripts,
@@ -86,15 +94,15 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=True if is_windows else False,
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    version=str(project_root / "scripts" / "version_info.txt"),
-    icon=str(project_root / "app" / "resources" / "icon.ico"),
+    version=version_file,
+    icon=icon_file,
 )
 
 coll = COLLECT(
@@ -103,7 +111,21 @@ coll = COLLECT(
     a.zipfiles,
     a.datas,
     strip=False,
-    upx=True,
+    upx=True if is_windows else False,
     upx_exclude=[],
     name="A1 Mini Pen Plotter",
 )
+
+if is_macos:
+    app = BUNDLE(
+        coll,
+        name="A1 Mini Pen Plotter.app",
+        icon=icon_file,
+        bundle_identifier="com.a1mini.penplotter",
+        info_plist={
+            "CFBundleShortVersionString": "1.1.0",
+            "CFBundleVersion": "1.1.0",
+            "NSHighResolutionCapable": "True",
+            "LSMinimumSystemVersion": "10.15",
+        },
+    )

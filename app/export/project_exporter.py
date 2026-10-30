@@ -19,6 +19,7 @@ from app.core.models import (
     ToolpathMove,
     WorkflowMode,
 )
+from app.core.platform_utils import get_user_app_data_dir
 from app.machine.a1_mini import MachineProfile, create_default_a1_mini_profile
 from app.machine.profiles import PenProfile, create_default_pen_profiles
 
@@ -143,7 +144,7 @@ class ProjectManager:
 
     def __init__(self, app_data_dir: Optional[Path] = None) -> None:
         if app_data_dir is None:
-            app_data_dir = Path.home() / ".a1_mini_pen_plotter"
+            app_data_dir = get_user_app_data_dir()
         self.app_data_dir = Path(app_data_dir)
         self.app_data_dir.mkdir(parents=True, exist_ok=True)
         self.autosave_path = self.app_data_dir / "autosave_recovery.a1plot"

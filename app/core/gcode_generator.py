@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import math
 from typing import Optional
 
 from app import __app_name__, __version__
@@ -128,10 +129,13 @@ class GcodeGenerator:
                 current_path_idx = mv.path_index
                 lines.append(f"; --- Path #{current_path_idx + 1} (Layer: {mv.layer}, Element: {mv.element_id}) ---")
 
+            feed = max(60.0, float(mv.feed_rate_mm_min)) if math.isfinite(mv.feed_rate_mm_min) else 60.0
+            clamped_z = max(0.0, float(mv.end_z)) if math.isfinite(mv.end_z) else 0.0
+
             if mv.move_type == MovementType.TRAVEL:
                 cmd_str = (
-                    f"G0 X{mv.end_x:.3f} Y{mv.end_y:.3f} Z{mv.end_z:.3f} "
-                    f"F{mv.feed_rate_mm_min:.0f} ; Travel (Pen Up)"
+                    f"G0 X{mv.end_x:.3f} Y{mv.end_y:.3f} Z{clamped_z:.3f} "
+                    f"F{feed:.0f} ; Travel (Pen Up)"
                 )
                 lines.append(cmd_str)
                 mv.gcode_line_number = len(lines)
@@ -139,7 +143,7 @@ class GcodeGenerator:
 
             elif mv.move_type == MovementType.PEN_DOWN:
                 lines.append("G90 ; Reassert absolute coordinates for controlled descent")
-                cmd_str = f"G1 Z{mv.end_z:.3f} F{mv.feed_rate_mm_min:.0f} ; Pen Down (Contact Z)"
+                cmd_str = f"G1 Z{clamped_z:.3f} F{feed:.0f} ; Pen Down (Contact Z)"
                 lines.append(cmd_str)
                 mv.gcode_line_number = len(lines)
                 mv.gcode_command = cmd_str
@@ -149,7 +153,7 @@ class GcodeGenerator:
             elif mv.move_type == MovementType.DRAW:
                 cmd_str = (
                     f"G1 X{mv.end_x:.3f} Y{mv.end_y:.3f} "
-                    f"F{mv.feed_rate_mm_min:.0f} ; Draw"
+                    f"F{feed:.0f} ; Draw"
                 )
                 lines.append(cmd_str)
                 mv.gcode_line_number = len(lines)
@@ -157,7 +161,7 @@ class GcodeGenerator:
 
             elif mv.move_type == MovementType.PEN_UP:
                 lines.append("G90 ; Reassert absolute coordinates for safe lift")
-                cmd_str = f"G0 Z{mv.end_z:.3f} F{mv.feed_rate_mm_min:.0f} ; Pen Up (Lift Z)"
+                cmd_str = f"G0 Z{clamped_z:.3f} F{feed:.0f} ; Pen Up (Lift Z)"
                 lines.append(cmd_str)
                 mv.gcode_line_number = len(lines)
                 mv.gcode_command = cmd_str

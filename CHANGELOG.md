@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.1.0] - 2026-10-30
+
+### Added
+- **Multiplatform Compatibility (Windows, Linux, macOS)**:
+  - Added OS-agnostic path handling and user data directory detection (`app/core/platform_utils.py`).
+  - Added native font fallbacks and theme consistency for Windows, Linux (Wayland & X11), and macOS (Retina High-DPI).
+  - Added cross-platform build scripts: `build_linux.sh` and `build_macos.sh` (packaging `.app` and `.dmg`).
+  - Added GitHub Actions CI/CD multiplatform matrix workflow (`.github/workflows/build_and_test.yml`) testing simultaneously on `windows-latest`, `ubuntu-latest`, and `macos-latest`.
+- **Adversarial Fuzzing & QA Test Batteries**:
+  - Added `tests/test_fuzzing.py`: testing corrupted XML, NaN/Infinity, extreme scientific notations, and singular matrices.
+  - Added `tests/test_gcode_edge_cases.py`: testing zero-area pen clicks, micro-lines, 200 overlapping paths, F0 prevention, and soft-stop precision.
+  - Added `tests/test_stress_concurrency.py`: simulator monkey testing, rapid resize, zoom/pan stress, Undo/Redo stack exhaustion, and QThreadPool task cancellation.
+  - Comprehensive technical bug hunt report: `BUG_HUNT_LOG.md`.
+
+### Fixed
+- Fixed float infinity overflow (`OverflowError`) and `NaN` conversion crash in cubic Bézier Wang step calculation.
+- Fixed unhandled XML syntax errors on empty, truncated, or corrupted files in `SvgParser`.
+- Fixed dropped 1-point drawings, enabling zero-area isolated pen clicks (dots) with controlled dwell and pen transitions.
+- Fixed zero/negative feedrate vulnerability ($F \le 0$) in G-code generator and added explicit safety inspection.
+- Fixed unchecked negative $Z$ coordinates in the G-code validator stream.
+- Tightened soft-stop boundary precision from $1e-4$ to $1e-5\text{ mm}$, guaranteeing strict mechanical enclosure.
+- Fixed missing UI font helper methods on `BuildPlateCanvas` during paint events.
+- Fixed modal import error dialog hanging headless test environments.
+- Fixed orphan thread and dangling signal risk during window close by ensuring threadpool completion.
+- Bounded `QUndoStack` to 300 entries to prevent memory exhaustion under heavy transform sequences.
+
+---
+
 ## [1.0.0] - 2026-10-30
 
 ### Added

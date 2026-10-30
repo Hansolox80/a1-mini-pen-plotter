@@ -6,7 +6,7 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import QSize, Qt, QTimer
+from PySide6.QtCore import QSize, Qt, QThreadPool, QTimer
 from PySide6.QtGui import QAction, QCloseEvent, QIcon, QKeySequence, QUndoStack
 from PySide6.QtWidgets import (
     QApplication,
@@ -39,6 +39,7 @@ from app.core.models import (
     WorkflowMode,
 )
 from app.core.path_optimizer import ToolpathGenerator
+from app.core.pipeline_worker import PipelineWorker
 from app.core.svg_parser import SvgParser
 from app.export.gcode_exporter import GcodeExporter, SafetyExportBlockedError
 from app.export.project_exporter import PlotterProject, ProjectManager
@@ -62,8 +63,13 @@ logger = logging.getLogger(__name__)
 class MainWindow(QMainWindow):
     """Primary desktop window integrating Toolbar, Left Sidebar, Build Plate Canvas, Simulator, Inspector, and Status Bar."""
 
-    def __init__(self, check_recovery: bool = True) -> None:
+    def __init__(self, check_recovery: bool = True, synchronous_pipeline: bool = False) -> None:
         super().__init__()
+        self.synchronous_pipeline = synchronous_pipeline
+        self.thread_pool = QThreadPool.globalInstance()
+        self._pipeline_task_id: int = 0
+        self._active_worker: Optional[PipelineWorker] = None
+
         self.setWindowTitle(f"{__app_name__} v{__version__} — Bambu Lab A1 Mini SVG-to-G-Code Studio")
         self.resize(1460, 900)
         self.setMinimumSize(1120, 720)
@@ -78,6 +84,7 @@ class MainWindow(QMainWindow):
         self.settings_manager = SettingsManager()
         self.project_manager = ProjectManager()
         self.undo_stack = QUndoStack(self)
+        self.undo_stack.setUndoLimit(300)
 
         # Active Project State
         self.project = PlotterProject(
@@ -127,12 +134,12 @@ class MainWindow(QMainWindow):
         file_menu.addAction(act_new)
 
         act_open_svg = QAction("Open SVG Drawing...", self)
-        act_open_svg.setShortcut(QKeySequence("Ctrl+O"))
+        act_open_svg.setShortcut(QKeySequence.StandardKey.Open)
         act_open_svg.triggered.connect(self.action_open_svg)
         file_menu.addAction(act_open_svg)
 
         act_open_proj = QAction("Open Project (.a1plot)...", self)
-        act_open_proj.setShortcut(QKeySequence("Ctrl+Shift+O"))
+        act_open_proj.setShortcut(QKeySequence(Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier | Qt.Key.Key_O))
         act_open_proj.triggered.connect(self.action_open_project)
         file_menu.addAction(act_open_proj)
 
@@ -147,14 +154,14 @@ class MainWindow(QMainWindow):
         file_menu.addAction(act_save)
 
         act_save_as = QAction("Save Project As...", self)
-        act_save_as.setShortcut(QKeySequence("Ctrl+Shift+S"))
+        act_save_as.setShortcut(QKeySequence.StandardKey.SaveAs)
         act_save_as.triggered.connect(self.action_save_project_as)
         file_menu.addAction(act_save_as)
 
         file_menu.addSeparator()
 
         act_exp_gcode = QAction("Export G-Code (.gcode)...", self)
-        act_exp_gcode.setShortcut(QKeySequence("Ctrl+E"))
+        act_exp_gcode.setShortcut(QKeySequence(Qt.KeyboardModifier.ControlModifier | Qt.Key.Key_E))
         act_exp_gcode.triggered.connect(self.action_export_gcode)
         file_menu.addAction(act_exp_gcode)
 
@@ -185,7 +192,7 @@ class MainWindow(QMainWindow):
 
         edit_menu.addSeparator()
         act_settings = QAction("Settings...", self)
-        act_settings.setShortcut(QKeySequence("Ctrl+,"))
+        act_settings.setShortcut(QKeySequence.StandardKey.Preferences)
         act_settings.triggered.connect(self.action_open_settings)
         edit_menu.addAction(act_settings)
 
@@ -345,7 +352,11 @@ class MainWindow(QMainWindow):
         sb = QStatusBar(self)
         self.setStatusBar(sb)
 
-        self.lbl_st_dims = QLabel("Dimensions: 0.0 × 0.0 mm", sb)
+        self.lbl_st_status = QLabel("Ready", sb)
+        self.lbl_st_status.setObjectName("StatusLabel")
+        sb.addWidget(self.lbl_st_status)
+
+        self.lbl_st_dims = QLabel("  |  Dimensions: 0.0 × 0.0 mm", sb)
         self.lbl_st_dims.setObjectName("MonoValueLabel")
         sb.addWidget(self.lbl_st_dims)
 
@@ -439,13 +450,21 @@ class MainWindow(QMainWindow):
                 )
 
             self.left_sidebar.populate_svg_document(doc)
+            if any(w.severity == "critical" for w in doc.warnings):
+                crit = next(w for w in doc.warnings if w.severity == "critical")
+                self.lbl_st_status.setText(f"SVG Warning: {crit.message}")
             self.recompute_pipeline()
         except Exception as exc:
             logger.exception("Failed to load SVG file: %s", file_path)
-            QMessageBox.critical(self, "SVG Import Error", f"Failed to parse SVG file:\n{file_path}\n\n{exc}")
+            self.lbl_st_status.setText(f"SVG Error: {exc}")
+            if not self.synchronous_pipeline:
+                QMessageBox.critical(self, "SVG Import Error", f"Failed to parse SVG file:\n{file_path}\n\n{exc}")
 
-    def recompute_pipeline(self) -> None:
-        """Runs the complete geometric transformation, toolpath optimization, G-code generation, and safety check."""
+    def recompute_pipeline(self, synchronous: Optional[bool] = None) -> None:
+        """Runs the complete geometric transformation, toolpath optimization, G-code generation,
+
+        and safety validation in a background QThreadPool worker to ensure the UI stays at 60 FPS.
+        """
         doc = self.project.svg_document
         machine = self.project.machine_profile
         pen = self.project.pen_profile
@@ -459,45 +478,58 @@ class MainWindow(QMainWindow):
             self._update_all_views([])
             return
 
-        # 1. Transform elements to build plate space
-        transformer = CoordinateTransformer(
-            machine=machine,
-            pen=pen,
-            invert_y=self.project.invert_y,
-            normalize_origin=self.project.normalize_origin,
-        )
-        transformed_elements = transformer.transform_document_elements(doc, self.project.doc_transform)
-        self.current_drawing_bounds = transformer.compute_bounds(transformed_elements)
+        is_sync = self.synchronous_pipeline if synchronous is None else synchronous
 
-        # 2. Generate toolpath moves & stats
-        tp_gen = ToolpathGenerator(
+        self._pipeline_task_id += 1
+        current_id = self._pipeline_task_id
+
+        if self._active_worker is not None:
+            self._active_worker.cancel()
+
+        self.lbl_st_status.setText("Processing Toolpaths...")
+
+        worker = PipelineWorker(
+            task_id=current_id,
+            doc=doc,
+            doc_transform=self.project.doc_transform,
             machine=machine,
             pen=pen,
             opt_settings=self.project.optimization_settings,
             fill_settings=self.project.fill_settings,
+            workflow_mode=self.project.workflow_mode,
             invert_y=self.project.invert_y,
             normalize_origin=self.project.normalize_origin,
             air_draw_mode=self.project.air_draw_mode,
             air_draw_offset_z_mm=self.project.air_draw_offset_z_mm,
+            project_name=self.project.name,
         )
-        moves, stats = tp_gen.generate(doc, self.project.doc_transform)
-        self.project.toolpath_moves = moves
-        self.current_stats = stats
+        self._active_worker = worker
 
-        # 3. Generate G-code
-        gcode_gen = GcodeGenerator(
-            machine=machine,
-            pen=pen,
-            workflow_mode=self.project.workflow_mode,
-        )
-        self.current_gcode = gcode_gen.generate(moves, stats, project_name=self.project.name)
+        def on_completed(task_id: int, res: dict) -> None:
+            if task_id != self._pipeline_task_id:
+                return  # Outdated result from older task, ignore
+            self.project.toolpath_moves = res["moves"]
+            self.current_stats = res["stats"]
+            self.current_gcode = res["gcode"]
+            self.current_validation = res["validation"]
+            self.current_drawing_bounds = res["drawing_bounds"]
+            self._update_all_views(res["transformed_elements"])
+            self._active_worker = None
 
-        # 4. Run mandatory safety validation
-        validator = SafetyValidator(machine=machine, pen=pen)
-        self.current_validation = validator.validate(moves, self.current_gcode)
+        def on_error(task_id: int, err_msg: str) -> None:
+            if task_id != self._pipeline_task_id:
+                return
+            logger.error("Background pipeline error: %s", err_msg)
+            self.lbl_st_status.setText("Calculation Error")
+            self._active_worker = None
 
-        # 5. Update Canvas, Simulator, Inspector, Status Bar
-        self._update_all_views(transformed_elements)
+        worker.signals.completed.connect(on_completed)
+        worker.signals.error.connect(on_error)
+
+        if is_sync:
+            worker.run()
+        else:
+            self.thread_pool.start(worker)
 
     def _update_all_views(self, transformed_elements: list) -> None:
         doc = self.project.svg_document
@@ -526,6 +558,7 @@ class MainWindow(QMainWindow):
         self._update_status_and_safety_badges()
 
     def _update_status_and_safety_badges(self) -> None:
+        self.lbl_st_status.setText("Ready")
         st = self.current_stats
         rep = self.current_validation
 
@@ -946,5 +979,13 @@ class MainWindow(QMainWindow):
             self.project_manager.clear_autosave()
 
     def closeEvent(self, event: QCloseEvent) -> None:
+        if self._active_worker is not None:
+            self._active_worker.cancel()
+        if hasattr(self, "autosave_timer") and self.autosave_timer is not None:
+            self.autosave_timer.stop()
+        if hasattr(self, "simulator_bar") and self.simulator_bar is not None:
+            self.simulator_bar.timer.stop()
+        if hasattr(self, "thread_pool") and self.thread_pool is not None:
+            self.thread_pool.waitForDone(300)
         self.project_manager.clear_autosave()
         super().closeEvent(event)

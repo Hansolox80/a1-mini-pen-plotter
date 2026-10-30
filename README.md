@@ -150,32 +150,44 @@ Before any execution-ready file can be exported, the mandatory validation engine
 
 ## Installation
 
-### Option A: Standalone Windows Binary (Recommended)
+### Option A: Standalone Binary Packages (Recommended)
 No Python installation required.
-1. Download the latest release archive (`A1-Mini-Pen-Plotter-v1.0.0-windows-x64.zip`) from the [Releases](https://github.com/) page.
-2. Extract the archive to any folder on your computer.
-3. Double-click **`A1 Mini Pen Plotter.exe`**.
-4. *(Optional)* Run `scripts\install_windows.ps1` to copy the application to `%LOCALAPPDATA%\Programs\A1 Mini Pen Plotter` and create Desktop & Start Menu shortcuts.
 
-### Option B: Running from Source (Python 3.12+)
+* **Windows (x64)**:
+  1. Download `A1-Mini-Pen-Plotter-v1.1.0-windows-x64.zip` from the [Releases](https://github.com/) page.
+  2. Extract the archive and double-click **`A1 Mini Pen Plotter.exe`**.
+  3. *(Optional)* Run `scripts\install_windows.ps1` to create Desktop & Start Menu shortcuts.
+* **Linux (x64)**:
+  1. Download `A1-Mini-Pen-Plotter-v1.1.0-linux-x64.tar.gz`.
+  2. Extract and run `./A1\ Mini\ Pen\ Plotter/A1\ Mini\ Pen\ Plotter`.
+* **macOS (Apple Silicon & Intel)**:
+  1. Download `A1-Mini-Pen-Plotter-v1.1.0-macos.dmg`.
+  2. Drag **`A1 Mini Pen Plotter.app`** to your Applications folder.
 
-```powershell
+### Option B: Running from Source (Python 3.10+)
+
+```bash
 # 1. Clone the repository
 git clone https://github.com/<your-username>/a1-mini-pen-plotter.git
 cd a1-mini-pen-plotter
 
 # 2. Create and activate a virtual environment
+# On Windows:
 python -m venv .venv
 .\.venv\Scripts\activate
+
+# On Linux / macOS:
+python3 -m venv .venv
+source .venv/bin/activate
 
 # 3. Install dependencies
 pip install -r requirements.txt
 
 # 4. Generate resources and seed default profiles
-python scripts\generate_assets.py
+python scripts/generate_assets.py
 
 # 5. Run the application
-python app\main.py
+python app/main.py
 ```
 
 ---
@@ -227,32 +239,30 @@ The application includes an interactive **6-Step Pen Calibration Wizard** access
 The project includes an automated build pipeline script (`build_windows.bat`) that verifies all dependencies, runs automated tests, and packages the standalone distribution using PyInstaller:
 
 ```cmd
-build_windows.bat
-```
+### Building for Windows, Linux, and macOS
 
-The script executes 5 automated stages:
-1. Creates or activates `.venv`.
-2. Installs requirements and generates vector assets.
-3. Runs the automated `pytest` suite (all 20 test suites must pass).
-4. Invokes PyInstaller with `A1_Mini_Pen_Plotter.spec` (bundles metadata, icons, and excludes heavy unused Qt modules).
-5. Populates `dist\A1 Mini Pen Plotter\resources\`, `profiles\`, and `examples\`, and executes a smoke test verifying that the compiled `.exe` launches and renders cleanly.
+* **Windows**: Run `build_windows.bat` (bundles `dist\A1 Mini Pen Plotter\A1 Mini Pen Plotter.exe`).
+* **Linux**: Run `chmod +x build_linux.sh && ./build_linux.sh` (bundles standalone binary and tarball).
+* **macOS**: Run `chmod +x build_macos.sh && ./build_macos.sh` (bundles `.app` bundle and `.dmg`).
 
-### Packaging a GitHub Release ZIP
+### Packaging a GitHub Release Archive
 To generate a release `.zip` with SHA-256 and MD5 checksums ready for GitHub Releases:
-```cmd
-scripts\package_release.bat
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\package_release.ps1
 ```
-Output: `dist\A1-Mini-Pen-Plotter-v1.0.0-windows-x64.zip`.
+Output: `dist\A1-Mini-Pen-Plotter-v1.1.0-windows-x64.zip`.
 
 ---
 
 ## Running Automated Tests
 
-A comprehensive test suite of 20 unit and UI integration tests is provided in [`tests/`](tests/):
+A comprehensive test suite of 42 unit, safety, fuzzing, concurrency, and UI integration tests is provided in [`tests/`](tests/):
 
 ```powershell
 pytest -v
 ```
+
+Full technical report and QA findings available in [`BUG_HUNT_LOG.md`](BUG_HUNT_LOG.md).
 
 ### Verified Test Cases:
 - **Square Dimensions**: Physical $20 \times 20\text{ mm}$ square toolpath within $0.001\text{ mm}$ tolerance.

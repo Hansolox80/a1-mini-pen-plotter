@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 )
 
 from app import __app_name__, __author__, __version__
+from app.core.platform_utils import get_user_app_data_dir
 from app.machine.profiles import ProfileManager
 
 
@@ -73,7 +74,7 @@ class SettingsManager:
 
     def __init__(self, settings_path: Optional[Path] = None) -> None:
         if settings_path is None:
-            settings_path = Path.home() / ".a1_mini_pen_plotter" / "settings.json"
+            settings_path = get_user_app_data_dir() / "settings.json"
         self.settings_path = Path(settings_path)
         self.settings_path.parent.mkdir(parents=True, exist_ok=True)
         self.settings = self.load()

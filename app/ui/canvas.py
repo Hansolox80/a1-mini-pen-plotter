@@ -34,6 +34,7 @@ from app.core.models import (
     ParsedSvgDocument,
     ToolpathMove,
 )
+from app.core.platform_utils import get_mono_font_family, get_system_font_family
 from app.core.simulator import SimulationState
 from app.machine.a1_mini import MachineProfile
 from app.machine.profiles import PenProfile
@@ -317,6 +318,16 @@ class BuildPlateCanvas(QWidget):
     # Custom Paint Engine
     # ==========================================================================
 
+    def _make_mono_font(self, point_size: int, bold: bool = False) -> QFont:
+        font = QFont(get_mono_font_family(), point_size)
+        font.setBold(bold)
+        return font
+
+    def _make_ui_font(self, point_size: int, bold: bool = False) -> QFont:
+        font = QFont(get_system_font_family(), point_size)
+        font.setBold(bold)
+        return font
+
     def paintEvent(self, event) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
@@ -393,8 +404,7 @@ class BuildPlateCanvas(QWidget):
 
         # Plate silkscreen branding label
         if self.zoom_px_per_mm >= 1.2:
-            font = QFont("Segoe UI", max(7, min(10, int(self.zoom_px_per_mm * 2.6))))
-            font.setBold(True)
+            font = self._make_ui_font(max(7, min(10, int(self.zoom_px_per_mm * 2.6))), bold=True)
             painter.setFont(font)
             painter.setPen(QColor("#475569"))
             painter.drawText(
@@ -458,7 +468,7 @@ class BuildPlateCanvas(QWidget):
         painter.drawRect(safe_rect)
 
         if self.zoom_px_per_mm >= 1.8:
-            font = QFont("Consolas", 8)
+            font = self._make_mono_font(8)
             painter.setFont(font)
             painter.setPen(QColor(245, 158, 11, 160))
             painter.drawText(
@@ -484,7 +494,7 @@ class BuildPlateCanvas(QWidget):
         painter.setBrush(QColor("#EF4444"))
         painter.drawEllipse(origin_pt, 5.0, 5.0)
 
-        font = QFont("Consolas", 8, QFont.Weight.Bold)
+        font = self._make_mono_font(8, bold=True)
         painter.setFont(font)
         painter.setPen(QColor("#94A3B8"))
         painter.drawText(origin_pt + QPointF(-28, 16), "(0,0)")
@@ -595,7 +605,7 @@ class BuildPlateCanvas(QWidget):
 
         # Dimension badge below selection
         dim_text = f"{self.drawing_bounds.width:.2f} × {self.drawing_bounds.height:.2f} mm"
-        font = QFont("Consolas", 8, QFont.Weight.Bold)
+        font = self._make_mono_font(8, bold=True)
         painter.setFont(font)
         fm = painter.fontMetrics()
         tw = fm.horizontalAdvance(dim_text) + 12
@@ -629,7 +639,7 @@ class BuildPlateCanvas(QWidget):
         if self.simulation_active:
             state_lbl = "PEN DOWN" if self.sim_state.is_pen_down else "PEN UP"
             tag = f"{state_lbl} ({self.sim_state.x:.1f}, {self.sim_state.y:.1f}, Z{self.sim_state.z:.1f})"
-            font = QFont("Consolas", 8, QFont.Weight.Bold)
+            font = self._make_mono_font(8, bold=True)
             painter.setFont(font)
             fm = painter.fontMetrics()
             tw = fm.horizontalAdvance(tag) + 12
@@ -661,7 +671,7 @@ class BuildPlateCanvas(QWidget):
         label = f"D: {dist:.2f} mm  (ΔX: {dx:+.2f}, ΔY: {dy:+.2f} mm, {ang:.1f}°)"
 
         mid = (p0 + p1) * 0.5
-        font = QFont("Consolas", 9, QFont.Weight.Bold)
+        font = self._make_mono_font(9, bold=True)
         painter.setFont(font)
         fm = painter.fontMetrics()
         tw = fm.horizontalAdvance(label) + 14
@@ -688,7 +698,7 @@ class BuildPlateCanvas(QWidget):
         painter.drawLine(rt, rt, w, rt)
         painter.drawLine(rt, rt, rt, h)
 
-        font = QFont("Consolas", 7)
+        font = self._make_mono_font(7)
         painter.setFont(font)
 
         # Top Horizontal Ruler (X mm)

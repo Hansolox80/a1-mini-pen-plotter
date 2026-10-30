@@ -2,12 +2,12 @@
 [Setup]
 AppId={{8D6B9E10-3C74-4F18-9B14-A10180180001}
 AppName=A1 Mini Pen Plotter
-AppVersion=1.0.0
+AppVersion=1.1.0
 AppPublisher=A1 Mini Pen Plotter Engineering
 DefaultDirName={autopf}\A1 Mini Pen Plotter
 DefaultGroupName=A1 Mini Pen Plotter
 OutputDir=..\dist
-OutputBaseFilename=A1_Mini_Pen_Plotter_Setup_v1.0.0
+OutputBaseFilename=A1_Mini_Pen_Plotter_Setup_v1.1.0
 SetupIconFile=..\app\resources\icon.ico
 Compression=lzma2
 SolidCompression=yes

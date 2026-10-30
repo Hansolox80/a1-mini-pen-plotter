@@ -16,11 +16,12 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QApplication
 
 from app import __app_name__, __version__
+from app.core.platform_utils import get_user_app_data_dir, is_macos
 from app.ui.main_window import MainWindow
 
 
 def configure_logging() -> None:
-    log_dir = Path.home() / ".a1_mini_pen_plotter" / "logs"
+    log_dir = get_user_app_data_dir() / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     log_file = log_dir / "a1_mini_pen_plotter.log"
 
@@ -41,12 +42,18 @@ def main(argv: list[str] | None = None) -> int:
 
     configure_logging()
 
+    # Enable High-DPI PassThrough and Retina scaling
     QApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
     )
     app = QApplication(sys.argv[:1])
     app.setApplicationName(__app_name__)
     app.setApplicationVersion(__version__)
+    app.setOrganizationName("SoloDev")
+
+    if is_macos():
+        # Clean macOS menu integration
+        app.setAttribute(Qt.ApplicationAttribute.AA_DontShowIconsInMenus, False)
 
     window = MainWindow(check_recovery=not bool(args.screenshot))
     if args.svg and Path(args.svg).exists():

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.core.platform_utils import get_mono_font_family, get_system_font_family
+
 
 # Layer 1 & 2: Primitive & Semantic Tokens
 TOKENS_DARK = {
@@ -52,19 +54,21 @@ TOKENS_SLATE = {
 def build_stylesheet(theme_name: str = "graphite_dark") -> str:
     """Generates the complete Qt Stylesheet (QSS) from semantic design tokens."""
     t = TOKENS_SLATE if theme_name == "slate_engineering" else TOKENS_DARK
+    sys_font = get_system_font_family()
+    mono_font = get_mono_font_family()
 
     return f"""
     /* Global Window & Typography */
     QMainWindow, QDialog {{
         background-color: {t['bg_window']};
         color: {t['text_primary']};
-        font-family: "Segoe UI Variable Text", "Segoe UI", "Inter", sans-serif;
+        font-family: {sys_font};
         font-size: 12px;
     }}
 
     QWidget {{
         color: {t['text_primary']};
-        font-family: "Segoe UI Variable Text", "Segoe UI", "Inter", sans-serif;
+        font-family: {sys_font};
         font-size: 12px;
         selection-background-color: {t['accent_primary']};
         selection-color: #090B0E;
@@ -114,7 +118,7 @@ def build_stylesheet(theme_name: str = "graphite_dark") -> str:
     }}
 
     QLabel#MonoValueLabel {{
-        font-family: "Cascadia Mono", "Consolas", monospace;
+        font-family: {mono_font};
         font-size: 12px;
         color: {t['text_primary']};
     }}
@@ -194,7 +198,7 @@ def build_stylesheet(theme_name: str = "graphite_dark") -> str:
     }}
 
     QDoubleSpinBox, QSpinBox {{
-        font-family: "Cascadia Mono", "Consolas", monospace;
+        font-family: {mono_font};
     }}
 
     QLineEdit:focus, QDoubleSpinBox:focus, QSpinBox:focus, QComboBox:focus, QPlainTextEdit:focus {{
