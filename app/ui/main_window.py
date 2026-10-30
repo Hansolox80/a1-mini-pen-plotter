@@ -386,6 +386,7 @@ class MainWindow(QMainWindow):
 
     def _connect_signals(self) -> None:
         # Left Sidebar signals
+        self.left_sidebar.open_svg_requested.connect(self.action_open_svg)
         self.left_sidebar.load_example_requested.connect(lambda p: self.load_svg_file(p, mark_dirty=True))
         self.left_sidebar.element_visibility_changed.connect(self._on_element_visibility_changed)
         self.left_sidebar.element_selection_changed.connect(self._on_element_selected)
@@ -864,6 +865,7 @@ class MainWindow(QMainWindow):
 
     def action_export_optimized_svg(self) -> None:
         if not self.project.toolpath_moves:
+            QMessageBox.warning(self, "Nothing to Export", "Load an SVG drawing before exporting an optimized SVG.")
             return
         path, _ = QFileDialog.getSaveFileName(
             self,
@@ -881,6 +883,9 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Optimized SVG Exported", f"Saved optimized SVG to:\n{path}")
 
     def action_export_report(self) -> None:
+        if not self.project.toolpath_moves:
+            QMessageBox.warning(self, "Nothing to Export", "Load an SVG drawing before exporting a safety validation report.")
+            return
         path, _ = QFileDialog.getSaveFileName(
             self,
             "Export Safety Validation Report",
@@ -898,6 +903,9 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Validation Report Exported", f"Saved validation report to:\n{path}")
 
     def action_export_preview_png(self) -> None:
+        if not self.project.toolpath_moves:
+            QMessageBox.warning(self, "Nothing to Export", "Load an SVG drawing before exporting a preview image.")
+            return
         path, _ = QFileDialog.getSaveFileName(
             self,
             "Export Build Plate Preview Image",

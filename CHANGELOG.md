@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.10.1] - 2026-10-30
+
+### Added
+- **Exhaustive Deep End-to-End Stress Test Suite (`tests/test_deep_end_to_end_stress.py`)**:
+  - Full gallery traversal across all 11 built-in sample SVGs with multiple curve precisions (0.05 mm, 0.2 mm) and all 3 workflow modes (`BAMBU_SD_DIRECT`, `BAMBU_STUDIO_3MF`, `STANDARD_GCODE`), validating file generation for `.gcode`, `.gcode.3mf`, `.svg`, and `.md` reports.
+  - Algorithmic geometry benchmarking: Archimedean spirals (600 points), concentric circular arrays (30 rings), and order-4 Hilbert space-filling fractals (256 vertices) verifying path length equivalence across optimization modes.
+  - Geometric containment testing for hatching and concentric contour fills on complex non-convex multipolygons with holes.
+  - Real-time simulation transport engine stress: step-by-step monotonicity, continuous scrub seeking, and playback across speeds from 0.25x to 25x.
+  - Deep Bambu Studio `.gcode.3mf` container inspection: ZIP archive hierarchy, embedded slice configuration (`Metadata/slice_info.config`), thumbnail PNG validation, and cryptographic MD5 integrity verification against `plate_1.gcode.md5`.
+  - 50-step bidirectional Undo/Redo state roundtrip testing on `QUndoStack`.
+  - 25-cycle repetitive pipeline endurance test verifying zero memory leaks or unhandled exceptions under continuous SVG loads, 2-Opt optimizations, and project resets.
+
+### Fixed
+- **UI & Usability Enhancements**:
+  - Added dedicated **"Open SVG File..."** button in the Project tab of the Left Sidebar.
+  - Added **"Rename"** and **"Delete"** management buttons for custom machine profiles in Left Sidebar, protecting the default `Bambu Lab A1 Mini` from deletion.
+  - Added empty-project warning dialogs preventing accidental export of empty SVGs, reports, or PNG previews.
+  - Added direct keyboard shortcuts (`+`, `=`, `-`, `_`) for intuitive canvas zooming.
+  - Dynamically enabled/disabled simulator playback transport controls and scrub slider based on toolpath availability.
+  - Preserved proportional aspect ratio scaling during width/height spinbox modifications under arbitrary element rotations.
+
+---
+
 ## [1.1.0] - 2026-10-30
 
 ### Added

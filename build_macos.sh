@@ -64,7 +64,7 @@ rm -rf build dist/"A1 Mini Pen Plotter.app" dist/"A1 Mini Pen Plotter"
 pyinstaller --noconfirm --clean A1_Mini_Pen_Plotter.spec
 
 # 8. Package Distribution (DMG & ZIP)
-VERSION="1.1.0"
+VERSION="1.10.1"
 APP_PATH="dist/A1 Mini Pen Plotter.app"
 ZIP_NAME="dist/A1-Mini-Pen-Plotter-v${VERSION}-macos-${ARCH}.zip"
 DMG_NAME="dist/A1-Mini-Pen-Plotter-v${VERSION}-macos-${ARCH}.dmg"

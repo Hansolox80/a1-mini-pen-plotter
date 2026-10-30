@@ -32,8 +32,8 @@ Paste log text here
 - Attached sample SVG (or simplified snippet causing the issue):
 
 ## Environment
-- OS: Windows 10 / Windows 11 (64-bit)
-- Application Version: v1.1.0 (Standalone Executable or Source Code)
+- OS: Windows 10 / Windows 11 / Linux / macOS
+- Application Version: v1.10.1 (Standalone Executable or Source Code)
 - Python Version (if running from source):
 - Printer: Bambu Lab A1 Mini (Firmware version if known)
 - Pen Holder Model / Adapter:

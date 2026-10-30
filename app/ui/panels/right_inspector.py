@@ -49,6 +49,8 @@ class RightInspectorPanel(QFrame):
         self._updating_ui = False
         self._native_width_mm: float = 100.0
         self._native_height_mm: float = 100.0
+        self._current_width_mm: float = 100.0
+        self._current_height_mm: float = 100.0
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(6, 6, 6, 6)
@@ -342,6 +344,8 @@ class RightInspectorPanel(QFrame):
         self.chk_mirror_y.setChecked(doc_transform.mirror_y)
 
         if drawing_bounds.is_valid and drawing_bounds.width > 0:
+            self._current_width_mm = drawing_bounds.width
+            self._current_height_mm = drawing_bounds.height
             self.spn_width.setValue(drawing_bounds.width)
             self.spn_height.setValue(drawing_bounds.height)
             self.lbl_bounds_readout.setText(
@@ -349,6 +353,8 @@ class RightInspectorPanel(QFrame):
                 f"Y[{drawing_bounds.min_y:.1f}..{drawing_bounds.max_y:.1f}] mm"
             )
         else:
+            self._current_width_mm = self._native_width_mm
+            self._current_height_mm = self._native_height_mm
             self.lbl_bounds_readout.setText("Bounds: 0.00 × 0.00 mm")
 
         self.lbl_opt_gain.setText(
@@ -378,26 +384,30 @@ class RightInspectorPanel(QFrame):
         )
 
     def _on_width_edited(self, new_w: float) -> None:
-        if self._updating_ui or self._native_width_mm <= 1e-4:
+        if self._updating_ui or self._current_width_mm <= 1e-4:
             return
-        new_sx = max(0.01, new_w / self._native_width_mm)
+        ratio = max(0.001, new_w / self._current_width_mm)
+        new_sx = max(0.01, round(self.spn_scale_x.value() * ratio, 4))
         self._updating_ui = True
         self.spn_scale_x.setValue(new_sx)
         if self.chk_lock_aspect.isChecked():
-            self.spn_scale_y.setValue(new_sx)
-            self.spn_height.setValue(self._native_height_mm * new_sx)
+            new_sy = max(0.01, round(self.spn_scale_y.value() * ratio, 4))
+            self.spn_scale_y.setValue(new_sy)
+            self.spn_height.setValue(round(self._current_height_mm * ratio, 2))
         self._updating_ui = False
         self.transform_changed.emit(self.current_transform())
 
     def _on_height_edited(self, new_h: float) -> None:
-        if self._updating_ui or self._native_height_mm <= 1e-4:
+        if self._updating_ui or self._current_height_mm <= 1e-4:
             return
-        new_sy = max(0.01, new_h / self._native_height_mm)
+        ratio = max(0.001, new_h / self._current_height_mm)
+        new_sy = max(0.01, round(self.spn_scale_y.value() * ratio, 4))
         self._updating_ui = True
         self.spn_scale_y.setValue(new_sy)
         if self.chk_lock_aspect.isChecked():
-            self.spn_scale_x.setValue(new_sy)
-            self.spn_width.setValue(self._native_width_mm * new_sy)
+            new_sx = max(0.01, round(self.spn_scale_x.value() * ratio, 4))
+            self.spn_scale_x.setValue(new_sx)
+            self.spn_width.setValue(round(self._current_width_mm * ratio, 2))
         self._updating_ui = False
         self.transform_changed.emit(self.current_transform())
 

@@ -878,6 +878,10 @@ class BuildPlateCanvas(QWidget):
             self.fit_plate_to_view()
         elif key == Qt.Key.Key_G:
             self.btn_toggle_grid.toggle()
+        elif key in (Qt.Key.Key_Plus, Qt.Key.Key_Equal):
+            self.zoom_by(1.25)
+        elif key in (Qt.Key.Key_Minus, Qt.Key.Key_Underscore):
+            self.zoom_by(0.8)
         elif key == Qt.Key.Key_Escape:
             self._measure_start_mm = None
             self._measure_end_mm = None

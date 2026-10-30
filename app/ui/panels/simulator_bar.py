@@ -136,7 +136,14 @@ class SimulatorControlBar(QFrame):
         self.timer.stop()
         self._sim_active = False
         self.simulator.load_moves(moves, initial_z=initial_z)
-        self.slider_progress.setRange(0, max(1, len(moves) - 1))
+        has_moves = len(moves) > 0
+        self.slider_progress.setEnabled(has_moves)
+        self.slider_progress.setRange(0, max(0, len(moves) - 1))
+        self.btn_play_pause.setEnabled(has_moves)
+        self.btn_restart.setEnabled(has_moves)
+        self.btn_step_back.setEnabled(has_moves)
+        self.btn_step_fwd.setEnabled(has_moves)
+        self.btn_exit_sim.setEnabled(has_moves)
         self._sync_ui_from_state()
 
     def on_toggle_play(self) -> None:

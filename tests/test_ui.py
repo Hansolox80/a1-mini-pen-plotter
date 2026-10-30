@@ -6,6 +6,7 @@ from pathlib import Path
 import sys
 
 import pytest
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
 
 from app.core.models import DocumentTransform, FillSettings, OptimizationSettings, WorkflowMode
@@ -108,3 +109,79 @@ def test_dialogs_instantiation_and_logic(qapp):
     set_dlg.close()
 
     win.close()
+
+
+def test_ui_comprehensive_button_and_shortcut_behavior(qapp, monkeypatch):
+    from PySide6.QtGui import QKeyEvent
+    from PySide6.QtCore import QEvent
+    from PySide6.QtWidgets import QMessageBox
+
+    win = MainWindow(check_recovery=False, synchronous_pipeline=True)
+    win.show()
+    qapp.processEvents()
+
+    # 1. Canvas keyboard zooming shortcuts (+, -, =)
+    initial_zoom = win.canvas.zoom_px_per_mm
+    evt_plus = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Plus, Qt.KeyboardModifier.NoModifier)
+    win.canvas.keyPressEvent(evt_plus)
+    assert win.canvas.zoom_px_per_mm > initial_zoom
+
+    evt_minus = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Minus, Qt.KeyboardModifier.NoModifier)
+    win.canvas.keyPressEvent(evt_minus)
+    assert abs(win.canvas.zoom_px_per_mm - initial_zoom) < 1e-2
+
+    evt_equal = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Equal, Qt.KeyboardModifier.NoModifier)
+    win.canvas.keyPressEvent(evt_equal)
+    assert win.canvas.zoom_px_per_mm > initial_zoom
+
+    # 2. Machine Profile CRUD (Duplicate, Rename, Delete protection)
+    sb = win.left_sidebar
+    orig_count = len(win.profile_manager.machines)
+    sb._on_duplicate_machine()
+    assert len(win.profile_manager.machines) == orig_count + 1
+    dup_m = sb.current_machine_profile()
+    assert "(Copy)" in dup_m.name
+
+    # Rename
+    win.profile_manager.rename_machine(dup_m.id, "Custom Mini Unit 2")
+    sb.refresh_profiles_ui(select_machine_id=dup_m.id)
+    assert sb.current_machine_profile().name == "Custom Mini Unit 2"
+
+    # Delete custom machine
+    sb._on_delete_machine()
+    assert len(win.profile_manager.machines) == orig_count
+
+    # Verify default bambu_a1_mini cannot be deleted
+    default_m = win.profile_manager.get_default_machine()
+    assert not win.profile_manager.delete_machine(default_m.id)
+
+    # 3. Simulator Control Bar states on empty project
+    win.action_new_project()
+    qapp.processEvents()
+    assert not win.simulator_bar.btn_play_pause.isEnabled()
+    assert not win.simulator_bar.slider_progress.isEnabled()
+    assert not win.simulator_bar.btn_restart.isEnabled()
+
+    # 4. Safe warning on exports when project has no toolpaths
+    warn_calls = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda parent, title, msg: warn_calls.append(title))
+
+    win.action_export_gcode()
+    win.action_export_3mf()
+    win.action_export_optimized_svg()
+    win.action_export_report()
+    win.action_export_preview_png()
+
+    assert len(warn_calls) == 5
+    assert all("Nothing to Export" in t for t in warn_calls)
+
+    # 5. Right Inspector proportional width/height editing
+    win.load_svg_file(str(EXAMPLES_DIR / "01_square_20x20mm.svg"), mark_dirty=False)
+    insp = win.right_inspector
+    old_w = insp.spn_width.value()
+    insp._on_width_edited(40.0)
+    assert abs(insp.spn_scale_x.value() - 2.0) < 1e-2
+    assert abs(insp.spn_scale_y.value() - 2.0) < 1e-2
+
+    win.close()
+

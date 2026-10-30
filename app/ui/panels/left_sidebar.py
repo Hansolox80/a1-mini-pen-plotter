@@ -128,6 +128,12 @@ class LeftSidebar(QFrame):
         row_sample.addWidget(btn_load_sample)
         cp_layout.addLayout(row_sample)
 
+        btn_open_custom = QPushButton("Open SVG File...", card_proj)
+        btn_open_custom.setIcon(make_icon("folder_open", "#22C55E", size=14))
+        btn_open_custom.setToolTip("Open a custom SVG vector drawing from your computer")
+        btn_open_custom.clicked.connect(self.open_svg_requested.emit)
+        cp_layout.addWidget(btn_open_custom)
+
         vbox.addWidget(card_proj)
 
         # Layers & SVG Elements Tree
@@ -216,6 +222,15 @@ class LeftSidebar(QFrame):
         btn_dup_m = QPushButton("Duplicate", card_sel)
         btn_dup_m.clicked.connect(self._on_duplicate_machine)
         row_m_btns.addWidget(btn_dup_m)
+
+        btn_ren_m = QPushButton("Rename", card_sel)
+        btn_ren_m.clicked.connect(self._on_rename_machine)
+        row_m_btns.addWidget(btn_ren_m)
+
+        btn_del_m = QPushButton("Delete", card_sel)
+        btn_del_m.setObjectName("DangerButton")
+        btn_del_m.clicked.connect(self._on_delete_machine)
+        row_m_btns.addWidget(btn_del_m)
 
         btn_save_m = QPushButton("Save Profile", card_sel)
         btn_save_m.setObjectName("PrimaryButton")
@@ -792,6 +807,26 @@ class LeftSidebar(QFrame):
         m = self.current_machine_profile()
         self.profile_manager.save_machine(m)
         QMessageBox.information(self, "Machine Profile Saved", f"Saved configuration for '{m.name}'.")
+
+    def _on_rename_machine(self) -> None:
+        cur = self.current_machine_profile()
+        name, ok = QInputDialog.getText(self, "Rename Machine Profile", "New Name:", text=cur.name)
+        if ok and name.strip():
+            self.profile_manager.rename_machine(cur.id, name.strip())
+            self.refresh_profiles_ui(select_machine_id=cur.id)
+            self.machine_profile_changed.emit(cur)
+
+    def _on_delete_machine(self) -> None:
+        cur = self.current_machine_profile()
+        if cur.id == "bambu_a1_mini" or cur.is_builtin:
+            QMessageBox.warning(self, "Cannot Delete", "The default Bambu Lab A1 Mini machine profile cannot be deleted.")
+            return
+        if len(self.profile_manager.machines) <= 1:
+            QMessageBox.warning(self, "Cannot Delete", "At least one machine profile must remain.")
+            return
+        if self.profile_manager.delete_machine(cur.id):
+            self.refresh_profiles_ui()
+            self.machine_profile_changed.emit(self.current_machine_profile())
 
     def _on_pen_combo_changed(self) -> None:
         if self._updating_ui:

@@ -214,6 +214,14 @@ class ProfileManager:
         self.save_machine(new_prof)
         return new_prof
 
+    def rename_machine(self, machine_id: str, new_name: str) -> Optional[MachineProfile]:
+        m = self.machines.get(machine_id)
+        if m is None:
+            return None
+        m.name = new_name.strip() or m.name
+        self.save_machine(m)
+        return m
+
     def save_pen(self, pen: PenProfile) -> None:
         self.pens[pen.id] = pen
         path = self.pens_dir / f"{pen.id}.json"
