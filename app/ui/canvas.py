@@ -108,6 +108,20 @@ class BuildPlateCanvas(QWidget):
 
         self._cursor_mm: tuple[float, float] = (0.0, 0.0)
 
+        # Performance geometry caches (eliminates per-frame allocations & Python loops)
+        self._cached_draw_ok_polys: list[QPolygonF] = []
+        self._cached_draw_err_lines: list[QLineF] = []
+        self._cached_travel_lines: list[QLineF] = []
+        self._cached_grid_minor: list[QLineF] = []
+        self._cached_grid_major: list[QLineF] = []
+        self._cached_grid_fine: list[QLineF] = []
+        self._cached_grid_w: float = 0.0
+        self._cached_grid_h: float = 0.0
+        self._last_cursor_label_text: str = ""
+        self._last_preview_emitted_xy: Optional[tuple[float, float]] = None
+        self._font_ruler: Optional[QFont] = None
+        self._font_mono_8_bold: Optional[QFont] = None
+
         self._build_overlay_hud()
 
     def _build_overlay_hud(self) -> None:
@@ -292,6 +306,89 @@ class BuildPlateCanvas(QWidget):
     # Data Update Methods
     # ==========================================================================
 
+    def _rebuild_cached_grid(self) -> None:
+        w_mm = int(self.machine.nominal_x_mm)
+        h_mm = int(self.machine.nominal_y_mm)
+        if w_mm == self._cached_grid_w and h_mm == self._cached_grid_h and self._cached_grid_minor:
+            return
+        self._cached_grid_w = float(w_mm)
+        self._cached_grid_h = float(h_mm)
+
+        minor_step = max(5, int(round(self.grid_minor_mm)))
+        major_step = max(10, int(round(self.grid_major_mm)))
+
+        self._cached_grid_minor = []
+        self._cached_grid_major = []
+        self._cached_grid_fine = []
+
+        x = minor_step
+        while x < w_mm:
+            line = QLineF(float(x), 0.0, float(x), float(h_mm))
+            if x % major_step == 0:
+                self._cached_grid_major.append(line)
+            else:
+                self._cached_grid_minor.append(line)
+            x += minor_step
+
+        y = minor_step
+        while y < h_mm:
+            line = QLineF(0.0, float(y), float(w_mm), float(y))
+            if y % major_step == 0:
+                self._cached_grid_major.append(line)
+            else:
+                self._cached_grid_minor.append(line)
+            y += minor_step
+
+    def _rebuild_cached_trajectories(self) -> None:
+        self._cached_draw_ok_polys.clear()
+        self._cached_draw_err_lines.clear()
+        self._cached_travel_lines.clear()
+
+        if not self.moves:
+            return
+
+        w_lim = self.machine.nominal_x_mm
+        h_lim = self.machine.nominal_y_mm
+
+        current_poly: list[QPointF] = []
+
+        for mv in self.moves:
+            if mv.move_type == MovementType.DRAW:
+                oob = (
+                    mv.start_x < 0.0
+                    or mv.end_x < 0.0
+                    or mv.start_y < 0.0
+                    or mv.end_y < 0.0
+                    or mv.start_x > w_lim
+                    or mv.end_x > w_lim
+                    or mv.start_y > h_lim
+                    or mv.end_y > h_lim
+                )
+                if oob:
+                    if current_poly:
+                        if len(current_poly) >= 2:
+                            self._cached_draw_ok_polys.append(QPolygonF(current_poly))
+                        current_poly = []
+                    self._cached_draw_err_lines.append(
+                        QLineF(mv.start_x, mv.start_y, mv.end_x, mv.end_y)
+                    )
+                else:
+                    if not current_poly:
+                        current_poly.append(QPointF(mv.start_x, mv.start_y))
+                    current_poly.append(QPointF(mv.end_x, mv.end_y))
+            else:
+                if current_poly:
+                    if len(current_poly) >= 2:
+                        self._cached_draw_ok_polys.append(QPolygonF(current_poly))
+                    current_poly = []
+                if mv.move_type == MovementType.TRAVEL:
+                    self._cached_travel_lines.append(
+                        QLineF(mv.start_x, mv.start_y, mv.end_x, mv.end_y)
+                    )
+
+        if current_poly and len(current_poly) >= 2:
+            self._cached_draw_ok_polys.append(QPolygonF(current_poly))
+
     def update_workspace_data(
         self,
         machine: MachineProfile,
@@ -309,6 +406,8 @@ class BuildPlateCanvas(QWidget):
         self.transformed_elements = transformed_elements
         self.drawing_bounds = drawing_bounds
         self.moves = moves
+        self._rebuild_cached_grid()
+        self._rebuild_cached_trajectories()
         self.update()
 
     def set_simulation_state(self, state: Optional[SimulationState], active: bool) -> None:
@@ -331,6 +430,25 @@ class BuildPlateCanvas(QWidget):
         return font
 
     def paintEvent(self, event) -> None:
+        rt = self.RULER_THICKNESS
+        event_rect = event.rect()
+
+        # Ultra-fast path: If only rulers need repainting (during mouse hover tick updates),
+        # skip drawing the build plate, grid, and trajectories entirely!
+        if (
+            not self._is_dragging_drawing
+            and not self._is_panning
+            and not self._is_measuring
+            and not self.simulation_active
+            and (event_rect.bottom() <= rt or event_rect.right() <= rt)
+        ):
+            painter = QPainter(self)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            if self.show_rulers:
+                self._draw_rulers(painter)
+            painter.end()
+            return
+
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
@@ -427,48 +545,43 @@ class BuildPlateCanvas(QWidget):
             )
 
     def _draw_grid(self, painter: QPainter) -> None:
-        w_mm = self.machine.nominal_x_mm
-        h_mm = self.machine.nominal_y_mm
+        if not self._cached_grid_minor and not self._cached_grid_major:
+            self._rebuild_cached_grid()
+
+        painter.save()
+        painter.translate(self.pan_offset_px.x(), self.height() - self.pan_offset_px.y())
+        painter.scale(self.zoom_px_per_mm, -self.zoom_px_per_mm)
 
         # Fine 1mm grid when zoomed in deeply
         if self.zoom_px_per_mm >= 8.0:
             pen_fine = QPen(QColor(255, 255, 255, 10), 1.0)
+            pen_fine.setCosmetic(True)
             painter.setPen(pen_fine)
-            for x in range(1, int(w_mm)):
-                if x % 10 == 0:
-                    continue
-                p0 = self.mm_to_screen(float(x), 0.0)
-                p1 = self.mm_to_screen(float(x), h_mm)
-                painter.drawLine(p0, p1)
-            for y in range(1, int(h_mm)):
-                if y % 10 == 0:
-                    continue
-                p0 = self.mm_to_screen(0.0, float(y))
-                p1 = self.mm_to_screen(w_mm, float(y))
-                painter.drawLine(p0, p1)
-
-        # Minor 10mm grid
-        minor_step = max(5, int(round(self.grid_minor_mm)))
-        major_step = max(10, int(round(self.grid_major_mm)))
+            if not self._cached_grid_fine:
+                w_mm = int(self.machine.nominal_x_mm)
+                h_mm = int(self.machine.nominal_y_mm)
+                self._cached_grid_fine = [
+                    QLineF(float(x), 0.0, float(x), float(h_mm))
+                    for x in range(1, w_mm)
+                    if x % 10 != 0
+                ] + [
+                    QLineF(0.0, float(y), float(w_mm), float(y))
+                    for y in range(1, h_mm)
+                    if y % 10 != 0
+                ]
+            painter.drawLines(self._cached_grid_fine)
 
         pen_minor = QPen(QColor("#222730"), 1.0)
+        pen_minor.setCosmetic(True)
+        painter.setPen(pen_minor)
+        painter.drawLines(self._cached_grid_minor)
+
         pen_major = QPen(QColor("#2E3542"), 1.2)
+        pen_major.setCosmetic(True)
+        painter.setPen(pen_major)
+        painter.drawLines(self._cached_grid_major)
 
-        x = minor_step
-        while x < int(w_mm):
-            painter.setPen(pen_major if x % major_step == 0 else pen_minor)
-            p0 = self.mm_to_screen(float(x), 0.0)
-            p1 = self.mm_to_screen(float(x), h_mm)
-            painter.drawLine(p0, p1)
-            x += minor_step
-
-        y = minor_step
-        while y < int(h_mm):
-            painter.setPen(pen_major if y % major_step == 0 else pen_minor)
-            p0 = self.mm_to_screen(0.0, float(y))
-            p1 = self.mm_to_screen(w_mm, float(y))
-            painter.drawLine(p0, p1)
-            y += minor_step
+        painter.restore()
 
     def _draw_safety_margins(self, painter: QPainter) -> None:
         tl = self.mm_to_screen(self.machine.usable_min_x, self.machine.usable_max_y)
@@ -512,113 +625,155 @@ class BuildPlateCanvas(QWidget):
         painter.setPen(QColor("#94A3B8"))
         painter.drawText(origin_pt + QPointF(-28, 16), "(0,0)")
 
+    def _draw_progressive_simulation(self, painter: QPainter) -> None:
+        if not self.moves or self.sim_state is None:
+            return
+
+        max_idx = self.sim_state.current_move_index
+        prog_in_last = self.sim_state.segment_progress
+
+        painter.save()
+        painter.translate(self.pan_offset_px.x(), self.height() - self.pan_offset_px.y())
+        painter.scale(self.zoom_px_per_mm, -self.zoom_px_per_mm)
+
+        # Dimmed future moves
+        if max_idx < len(self.moves) - 1:
+            pen_future = QPen(QColor(148, 163, 184, 40), 1.2)
+            pen_future.setCapStyle(Qt.PenCapStyle.FlatCap)
+            pen_future.setCosmetic(True)
+            painter.setPen(pen_future)
+            future_lines = [
+                QLineF(mv.start_x, mv.start_y, mv.end_x, mv.end_y)
+                for mv in self.moves[max_idx + 1 :]
+                if mv.move_type == MovementType.DRAW
+            ]
+            if future_lines:
+                painter.drawLines(future_lines)
+
+        # Completed / active moves up to max_idx
+        pen_travel = QPen(QColor(56, 189, 248, 115), 1.0, Qt.PenStyle.DashLine)
+        pen_travel.setCapStyle(Qt.PenCapStyle.FlatCap)
+        pen_travel.setCosmetic(True)
+
+        stroke_px = max(1.6, self.pen.tip_diameter_mm * self.zoom_px_per_mm)
+        pen_draw = QPen(QColor(self.pen.color_hex or "#22C55E"), stroke_px)
+        pen_draw.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen_draw.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        pen_draw.setCosmetic(True)
+
+        travel_lines: list[QLineF] = []
+        draw_polys: list[QPolygonF] = []
+        current_draw_pts: list[QPointF] = []
+
+        for idx in range(0, max_idx + 1):
+            mv = self.moves[idx]
+            if idx == max_idx and prog_in_last < 1.0:
+                ex = mv.start_x + (mv.end_x - mv.start_x) * prog_in_last
+                ey = mv.start_y + (mv.end_y - mv.start_y) * prog_in_last
+            else:
+                ex, ey = mv.end_x, mv.end_y
+
+            if mv.move_type == MovementType.DRAW:
+                if not current_draw_pts:
+                    current_draw_pts.append(QPointF(mv.start_x, mv.start_y))
+                current_draw_pts.append(QPointF(ex, ey))
+            else:
+                if current_draw_pts:
+                    if len(current_draw_pts) >= 2:
+                        draw_polys.append(QPolygonF(current_draw_pts))
+                    current_draw_pts = []
+                if mv.move_type == MovementType.TRAVEL:
+                    travel_lines.append(QLineF(mv.start_x, mv.start_y, ex, ey))
+
+        if current_draw_pts and len(current_draw_pts) >= 2:
+            draw_polys.append(QPolygonF(current_draw_pts))
+
+        if self.show_travel_moves and travel_lines:
+            painter.setPen(pen_travel)
+            painter.drawLines(travel_lines)
+
+        if draw_polys:
+            painter.setPen(pen_draw)
+            for poly in draw_polys:
+                painter.drawPolyline(poly)
+
+        painter.restore()
+
     def _draw_trajectories(self, painter: QPainter) -> None:
-        # If moves are available, render toolpath moves (supporting progressive simulation mode)
-        if self.moves and self.show_toolpath_preview:
-            max_idx = len(self.moves) - 1
-            prog_in_last = 1.0
-            if self.simulation_active and self.sim_state is not None:
-                max_idx = self.sim_state.current_move_index
-                prog_in_last = self.sim_state.segment_progress
+        if not self.moves or not self.show_toolpath_preview:
+            return
 
-            pan_x = self.pan_offset_px.x()
-            pan_y = self.pan_offset_px.y()
-            h = self.height()
-            z = self.zoom_px_per_mm
+        if self.simulation_active and self.sim_state is not None:
+            self._draw_progressive_simulation(painter)
+            return
 
-            # First pass: dimmed future moves when simulating
-            if self.simulation_active and max_idx < len(self.moves) - 1:
-                pen_future = QPen(QColor(148, 163, 184, 40), 1.2)
-                future_lines: list[QLineF] = []
-                for mv in self.moves[max_idx + 1 :]:
-                    if mv.move_type == MovementType.DRAW:
-                        p0 = QPointF(pan_x + mv.start_x * z, h - pan_y - mv.start_y * z)
-                        p1 = QPointF(pan_x + mv.end_x * z, h - pan_y - mv.end_y * z)
-                        future_lines.append(QLineF(p0, p1))
-                if future_lines:
-                    painter.setPen(pen_future)
-                    painter.drawLines(future_lines)
+        painter.save()
+        painter.translate(self.pan_offset_px.x(), self.height() - self.pan_offset_px.y())
+        painter.scale(self.zoom_px_per_mm, -self.zoom_px_per_mm)
 
-            # Level of Detail (LOD) subsampling when zoomed far out and many moves exist
-            lod_stride = 1
-            if len(self.moves) > 3000 and self.zoom_px_per_mm < 2.0 and not self.simulation_active:
-                lod_stride = 2 if self.zoom_px_per_mm >= 1.2 else 3
+        # 1. Travel moves
+        if self.show_travel_moves and self._cached_travel_lines:
+            pen_travel = QPen(QColor(56, 189, 248, 115), 1.0, Qt.PenStyle.DashLine)
+            pen_travel.setCapStyle(Qt.PenCapStyle.FlatCap)
+            pen_travel.setCosmetic(True)
+            painter.setPen(pen_travel)
+            painter.drawLines(self._cached_travel_lines)
 
-            # Second pass: Travel moves
-            if self.show_travel_moves:
-                pen_travel = QPen(QColor(56, 189, 248, 115), 1.0, Qt.PenStyle.DashLine)
-                travel_lines: list[QLineF] = []
-                for idx in range(0, max_idx + 1, lod_stride if not self.simulation_active else 1):
-                    mv = self.moves[idx]
-                    if mv.move_type == MovementType.TRAVEL:
-                        p0 = QPointF(pan_x + mv.start_x * z, h - pan_y - mv.start_y * z)
-                        if idx == max_idx and prog_in_last < 1.0:
-                            ex = mv.start_x + (mv.end_x - mv.start_x) * prog_in_last
-                            ey = mv.start_y + (mv.end_y - mv.start_y) * prog_in_last
-                            p1 = QPointF(pan_x + ex * z, h - pan_y - ey * z)
-                        else:
-                            p1 = QPointF(pan_x + mv.end_x * z, h - pan_y - mv.end_y * z)
-                        travel_lines.append(QLineF(p0, p1))
-                if travel_lines:
-                    painter.setPen(pen_travel)
-                    painter.drawLines(travel_lines)
-
-            # Third pass: Pen-down drawing moves (highlighting out-of-bounds moves in red!)
+        # 2. In-bounds drawing polylines (using hardware-accelerated batch polyline calls)
+        if self._cached_draw_ok_polys:
             stroke_px = max(1.6, self.pen.tip_diameter_mm * self.zoom_px_per_mm)
-            pen_draw_ok = QPen(QColor(self.pen.color_hex or "#22C55E"), stroke_px)
+
+            # Check if dragging outside plate limits to tint whole drawing red
+            is_oob_drag = False
+            if self._is_dragging_drawing and self.drawing_bounds.is_valid:
+                cur_min_x = self.drawing_bounds.min_x + self._drag_delta_mm[0]
+                cur_min_y = self.drawing_bounds.min_y + self._drag_delta_mm[1]
+                cur_max_x = self.drawing_bounds.max_x + self._drag_delta_mm[0]
+                cur_max_y = self.drawing_bounds.max_y + self._drag_delta_mm[1]
+                if (
+                    cur_min_x < 0.0
+                    or cur_min_y < 0.0
+                    or cur_max_x > self.machine.nominal_x_mm
+                    or cur_max_y > self.machine.nominal_y_mm
+                ):
+                    is_oob_drag = True
+
+            pen_color = QColor("#EF4444") if is_oob_drag else QColor(self.pen.color_hex or "#22C55E")
+            pen_draw_ok = QPen(pen_color, stroke_px)
             pen_draw_ok.setCapStyle(Qt.PenCapStyle.RoundCap)
+            pen_draw_ok.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+            pen_draw_ok.setCosmetic(True)
+            painter.setPen(pen_draw_ok)
+
+            for poly in self._cached_draw_ok_polys:
+                painter.drawPolyline(poly)
+
+        # 3. Out-of-bounds drawing segments (if any)
+        if self._cached_draw_err_lines:
+            stroke_px = max(1.6, self.pen.tip_diameter_mm * self.zoom_px_per_mm)
             pen_draw_err = QPen(QColor("#EF4444"), stroke_px + 0.6)
-            pen_draw_err.setCapStyle(Qt.PenCapStyle.RoundCap)
+            pen_draw_err.setCapStyle(Qt.PenCapStyle.FlatCap)
+            pen_draw_err.setCosmetic(True)
+            painter.setPen(pen_draw_err)
+            painter.drawLines(self._cached_draw_err_lines)
 
-            w_lim = self.machine.nominal_x_mm
-            h_lim = self.machine.nominal_y_mm
+        painter.restore()
 
-            draw_ok_lines: list[QLineF] = []
-            draw_err_lines: list[QLineF] = []
-
-            for idx in range(0, max_idx + 1, lod_stride if not self.simulation_active else 1):
-                mv = self.moves[idx]
-                if mv.move_type == MovementType.DRAW:
-                    p0 = QPointF(pan_x + mv.start_x * z, h - pan_y - mv.start_y * z)
-                    if idx == max_idx and prog_in_last < 1.0:
-                        ex = mv.start_x + (mv.end_x - mv.start_x) * prog_in_last
-                        ey = mv.start_y + (mv.end_y - mv.start_y) * prog_in_last
-                        p1 = QPointF(pan_x + ex * z, h - pan_y - ey * z)
-                    else:
-                        p1 = QPointF(pan_x + mv.end_x * z, h - pan_y - mv.end_y * z)
-
-                    out_of_bounds = (
-                        mv.start_x < 0.0
-                        or mv.end_x < 0.0
-                        or mv.start_y < 0.0
-                        or mv.end_y < 0.0
-                        or mv.start_x > w_lim
-                        or mv.end_x > w_lim
-                        or mv.start_y > h_lim
-                        or mv.end_y > h_lim
-                    )
-                    if out_of_bounds:
-                        draw_err_lines.append(QLineF(p0, p1))
-                    else:
-                        draw_ok_lines.append(QLineF(p0, p1))
-
-            if draw_ok_lines:
-                painter.setPen(pen_draw_ok)
-                painter.drawLines(draw_ok_lines)
-            if draw_err_lines:
-                painter.setPen(pen_draw_err)
-                painter.drawLines(draw_err_lines)
-
-        # Also highlight selected individual SVG element if any
+        # 4. Highlight individual selected SVG element if any
         if self.selected_element_id and self.transformed_elements:
             pen_sel = QPen(QColor("#FACC15"), 2.4)
+            pen_sel.setCosmetic(True)
             painter.setPen(pen_sel)
+            painter.save()
+            painter.translate(self.pan_offset_px.x(), self.height() - self.pan_offset_px.y())
+            painter.scale(self.zoom_px_per_mm, -self.zoom_px_per_mm)
             for el, polys in self.transformed_elements:
                 if getattr(el, "id", "") == self.selected_element_id:
                     for poly in polys:
                         if len(poly) >= 2:
-                            qpoly = QPolygonF([self.mm_to_screen(px, py) for px, py in poly])
+                            qpoly = QPolygonF([QPointF(px, py) for px, py in poly])
                             painter.drawPolyline(qpoly)
+            painter.restore()
 
     def _draw_selection_gizmo(self, painter: QPainter) -> None:
         if not self.drawing_bounds.is_valid or (self.drawing_bounds.width == 0 and self.drawing_bounds.height == 0):
@@ -628,13 +783,30 @@ class BuildPlateCanvas(QWidget):
         br = self.mm_to_screen(self.drawing_bounds.max_x, self.drawing_bounds.min_y)
         box = QRectF(tl, br)
 
-        painter.setPen(QPen(QColor(56, 189, 248, 180), 1.2, Qt.PenStyle.DashLine))
+        is_oob = False
+        if self._is_dragging_drawing and self.drawing_bounds.is_valid:
+            cur_min_x = self.drawing_bounds.min_x + self._drag_delta_mm[0]
+            cur_min_y = self.drawing_bounds.min_y + self._drag_delta_mm[1]
+            cur_max_x = self.drawing_bounds.max_x + self._drag_delta_mm[0]
+            cur_max_y = self.drawing_bounds.max_y + self._drag_delta_mm[1]
+            if (
+                cur_min_x < 0.0
+                or cur_min_y < 0.0
+                or cur_max_x > self.machine.nominal_x_mm
+                or cur_max_y > self.machine.nominal_y_mm
+            ):
+                is_oob = True
+
+        gizmo_color = QColor("#EF4444") if is_oob else QColor(56, 189, 248, 180)
+        handle_color = QColor("#EF4444") if is_oob else QColor("#38BDF8")
+
+        painter.setPen(QPen(gizmo_color, 1.2, Qt.PenStyle.DashLine))
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawRect(box)
 
         # Corner handles
         painter.setPen(QPen(QColor("#0E1013"), 1.2))
-        painter.setBrush(QColor("#38BDF8"))
+        painter.setBrush(handle_color)
         for pt in (box.topLeft(), box.topRight(), box.bottomLeft(), box.bottomRight()):
             painter.drawRect(QRectF(pt.x() - 4, pt.y() - 4, 8, 8))
 
@@ -645,7 +817,7 @@ class BuildPlateCanvas(QWidget):
         fm = painter.fontMetrics()
         tw = fm.horizontalAdvance(dim_text) + 12
         badge_rect = QRectF(box.center().x() - tw * 0.5, box.bottom() + 6, tw, 18)
-        painter.setPen(QPen(QColor("#38BDF8"), 1.0))
+        painter.setPen(QPen(handle_color, 1.0))
         painter.setBrush(QColor(18, 21, 25, 220))
         painter.drawRoundedRect(badge_rect, 3.0, 3.0)
         painter.setPen(QColor("#E2E8F0"))
@@ -838,6 +1010,7 @@ class BuildPlateCanvas(QWidget):
                     self._is_dragging_drawing = True
                     self._drag_start_mouse_mm = (mm_x, mm_y)
                     self._drag_delta_mm = (0.0, 0.0)
+                    self._last_preview_emitted_xy = None
                     self._drag_start_transform = DocumentTransform.from_dict(self.doc_transform.to_dict())
                     self.setCursor(Qt.CursorShape.SizeAllCursor)
                     event.accept()
@@ -847,7 +1020,13 @@ class BuildPlateCanvas(QWidget):
         pos = event.position()
         mm_x, mm_y = self.screen_to_mm(pos)
         self._cursor_mm = (mm_x, mm_y)
-        self.lbl_cursor_xy.setText(f"X: {mm_x:6.2f} mm   Y: {mm_y:6.2f} mm")
+
+        # Update cursor HUD label only when formatted text changes
+        lbl_text = f"X: {mm_x:6.2f} mm   Y: {mm_y:6.2f} mm"
+        if lbl_text != self._last_cursor_label_text:
+            self._last_cursor_label_text = lbl_text
+            self.lbl_cursor_xy.setText(lbl_text)
+
         self.cursor_mm_changed.emit(mm_x, mm_y)
 
         if self._is_panning:
@@ -872,7 +1051,12 @@ class BuildPlateCanvas(QWidget):
             new_t = DocumentTransform.from_dict(self._drag_start_transform.to_dict())
             new_t.pos_x_mm = round(self._drag_start_transform.pos_x_mm + dx_mm, 2)
             new_t.pos_y_mm = round(self._drag_start_transform.pos_y_mm + dy_mm, 2)
-            self.transform_preview_changed.emit(new_t)
+
+            cur_xy = (new_t.pos_x_mm, new_t.pos_y_mm)
+            if cur_xy != self._last_preview_emitted_xy:
+                self._last_preview_emitted_xy = cur_xy
+                self.transform_preview_changed.emit(new_t)
+
             self.update()
             return
 
