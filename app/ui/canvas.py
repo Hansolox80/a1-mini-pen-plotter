@@ -8,6 +8,8 @@ from typing import Optional
 
 from PySide6.QtCore import QLineF, QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import (
+    QAction,
+    QActionGroup,
     QBrush,
     QColor,
     QFont,
@@ -24,6 +26,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QMenu,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -45,6 +48,7 @@ from app.ui.icons import make_icon
 
 class CanvasTool(str):
     SELECT = "select"
+    RESIZE = "resize"
     PAN = "pan"
     MEASURE = "measure"
 
@@ -54,6 +58,7 @@ class BuildPlateCanvas(QWidget):
 
     transform_dragged = Signal(DocumentTransform, DocumentTransform)  # (old_transform, new_transform)
     transform_preview_changed = Signal(DocumentTransform)
+    scaling_mode_changed = Signal(bool)  # True = proportional (keep aspect), False = freeform stretch
     element_selected = Signal(str)  # element_id or ""
     cursor_mm_changed = Signal(float, float)
 
@@ -103,6 +108,16 @@ class BuildPlateCanvas(QWidget):
         self._drag_start_mouse_mm: tuple[float, float] = (0.0, 0.0)
         self._drag_start_transform: Optional[DocumentTransform] = None
         self._drag_delta_mm: tuple[float, float] = (0.0, 0.0)
+
+        # Interactive Resize & Scaling tool state
+        self.is_proportional_scale: bool = True
+        self._is_resizing_drawing: bool = False
+        self._resize_handle: Optional[str] = None
+        self._resize_start_mouse_mm: tuple[float, float] = (0.0, 0.0)
+        self._resize_start_bounds: Optional[BoundingBox] = None
+        self._resize_start_transform: Optional[DocumentTransform] = None
+        self._resize_preview_bounds: Optional[BoundingBox] = None
+        self._hovered_handle: Optional[str] = None
 
         self._is_measuring: bool = False
         self._measure_start_mm: Optional[tuple[float, float]] = None
@@ -157,6 +172,35 @@ class BuildPlateCanvas(QWidget):
         self.btn_select.setChecked(True)
         self.btn_select.clicked.connect(lambda: self.set_active_tool(CanvasTool.SELECT))
         tc_layout.addWidget(self.btn_select)
+
+        self.btn_resize_tool = QToolButton(tool_card)
+        self.btn_resize_tool.setIcon(make_icon("resize"))
+        self.btn_resize_tool.setCheckable(True)
+        self.btn_resize_tool.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
+        self.btn_resize_tool.clicked.connect(lambda: self.set_active_tool(CanvasTool.RESIZE))
+
+        # Mode Selection Menu for Resize Tool
+        self.menu_resize = QMenu(self.btn_resize_tool)
+        self.act_prop_scale = QAction("Escala Proporcional (Manter Proporção)", self)
+        self.act_prop_scale.setCheckable(True)
+        self.act_prop_scale.setChecked(True)
+        self.act_prop_scale.triggered.connect(lambda: self.set_proportional_scaling(True))
+
+        self.act_free_scale = QAction("Ajuste Livre (Esticar X / Y Independentes)", self)
+        self.act_free_scale.setCheckable(True)
+        self.act_free_scale.setChecked(False)
+        self.act_free_scale.triggered.connect(lambda: self.set_proportional_scaling(False))
+
+        scale_group = QActionGroup(self)
+        scale_group.addAction(self.act_prop_scale)
+        scale_group.addAction(self.act_free_scale)
+        scale_group.setExclusive(True)
+
+        self.menu_resize.addAction(self.act_prop_scale)
+        self.menu_resize.addAction(self.act_free_scale)
+        self.btn_resize_tool.setMenu(self.menu_resize)
+        self._update_resize_tool_tooltip()
+        tc_layout.addWidget(self.btn_resize_tool)
 
         self.btn_pan = QToolButton(tool_card)
         self.btn_pan.setIcon(make_icon("pan"))
@@ -238,18 +282,112 @@ class BuildPlateCanvas(QWidget):
         main_layout.addLayout(top_row)
         main_layout.addStretch(1)
 
+    def _update_resize_tool_tooltip(self) -> None:
+        mode_label = "Escala Proporcional (Manter Proporção)" if self.is_proportional_scale else "Ajuste Livre (Esticar X/Y)"
+        self.btn_resize_tool.setToolTip(
+            f"Ferramenta de Redimensionar / Escala (R)\n"
+            f"Modo: {mode_label}\n"
+            f"• Arraste os cantos ou bordas para redimensionar.\n"
+            f"• Segure Shift para inverter o modo temporariamente.\n"
+            f"• Clique na setinha do botão para alternar o modo padrão."
+        )
+
+    def set_proportional_scaling(self, proportional: bool) -> None:
+        self.is_proportional_scale = proportional
+        self.act_prop_scale.setChecked(proportional)
+        self.act_free_scale.setChecked(not proportional)
+        self._update_resize_tool_tooltip()
+        self.scaling_mode_changed.emit(proportional)
+        self.update()
+
     def set_active_tool(self, tool: str) -> None:
         self.active_tool = tool
         self.btn_select.setChecked(tool == CanvasTool.SELECT)
+        self.btn_resize_tool.setChecked(tool == CanvasTool.RESIZE)
         self.btn_pan.setChecked(tool == CanvasTool.PAN)
         self.btn_measure.setChecked(tool == CanvasTool.MEASURE)
         if tool == CanvasTool.PAN:
             self.setCursor(Qt.CursorShape.OpenHandCursor)
         elif tool == CanvasTool.MEASURE:
             self.setCursor(Qt.CursorShape.CrossCursor)
+        elif tool == CanvasTool.RESIZE:
+            self.setCursor(Qt.CursorShape.CrossCursor)
         else:
             self.setCursor(Qt.CursorShape.ArrowCursor)
         self.update()
+
+    def _get_handles(self) -> dict[str, QPointF]:
+        if not self.transformed_elements:
+            return {}
+
+        b = (
+            self._resize_preview_bounds
+            if (self._is_resizing_drawing and self._resize_preview_bounds is not None)
+            else self.drawing_bounds
+        )
+        if not b.is_valid:
+            return {}
+
+        drag_dx = self._drag_delta_mm[0] if (self._is_dragging_drawing and not self._is_resizing_drawing) else 0.0
+        drag_dy = self._drag_delta_mm[1] if (self._is_dragging_drawing and not self._is_resizing_drawing) else 0.0
+
+        min_x = b.min_x + drag_dx
+        min_y = b.min_y + drag_dy
+        max_x = b.max_x + drag_dx
+        max_y = b.max_y + drag_dy
+
+        tl = self.mm_to_screen(min_x, max_y)
+        tr = self.mm_to_screen(max_x, max_y)
+        bl = self.mm_to_screen(min_x, min_y)
+        br = self.mm_to_screen(max_x, min_y)
+
+        tc = QPointF((tl.x() + tr.x()) * 0.5, tl.y())
+        bc = QPointF((bl.x() + br.x()) * 0.5, bl.y())
+        ml = QPointF(tl.x(), (tl.y() + bl.y()) * 0.5)
+        mr = QPointF(tr.x(), (tr.y() + br.y()) * 0.5)
+
+        return {
+            "TL": tl,
+            "TR": tr,
+            "BL": bl,
+            "BR": br,
+            "TC": tc,
+            "BC": bc,
+            "ML": ml,
+            "MR": mr,
+        }
+
+    def _hit_test_handle(self, screen_pos: QPointF) -> Optional[str]:
+        handles = self._get_handles()
+        if not handles:
+            return None
+
+        # Check corners first with 12px radius
+        for h in ("TL", "TR", "BL", "BR"):
+            pt = handles[h]
+            dist_sq = (screen_pos.x() - pt.x()) ** 2 + (screen_pos.y() - pt.y()) ** 2
+            if dist_sq <= 144.0:
+                return h
+
+        # Check edge handles with 10px radius
+        for h in ("TC", "BC", "ML", "MR"):
+            pt = handles[h]
+            dist_sq = (screen_pos.x() - pt.x()) ** 2 + (screen_pos.y() - pt.y()) ** 2
+            if dist_sq <= 100.0:
+                return h
+
+        return None
+
+    def _cursor_for_handle(self, handle: str) -> Qt.CursorShape:
+        if handle in ("TL", "BR"):
+            return Qt.CursorShape.SizeFDiagCursor
+        elif handle in ("TR", "BL"):
+            return Qt.CursorShape.SizeBDiagCursor
+        elif handle in ("ML", "MR"):
+            return Qt.CursorShape.SizeHorCursor
+        elif handle in ("TC", "BC"):
+            return Qt.CursorShape.SizeVerCursor
+        return Qt.CursorShape.ArrowCursor
 
     def _invalidate_caches(self, plate: bool = True, drawing: bool = True) -> None:
         if plate:
@@ -721,9 +859,36 @@ class BuildPlateCanvas(QWidget):
 
                     pix = self._drawing_pixmap_red if (is_oob_drag and self._drawing_pixmap_red) else self._drawing_pixmap
                     pad_draw = self._drawing_pad_px
-                    draw_tl = self.mm_to_screen(self.drawing_bounds.min_x, self.drawing_bounds.max_y)
-                    drag_px = QPointF(drag_dx * self.zoom_px_per_mm, -drag_dy * self.zoom_px_per_mm)
-                    painter.drawPixmap(QPointF(draw_tl.x() - pad_draw, draw_tl.y() - pad_draw) + drag_px, pix)
+
+                    if self._is_resizing_drawing and self._resize_preview_bounds is not None:
+                        pb = self._resize_preview_bounds
+                        if (
+                            pb.min_x < 0.0
+                            or pb.min_y < 0.0
+                            or pb.max_x > self.machine.nominal_x_mm
+                            or pb.max_y > self.machine.nominal_y_mm
+                        ):
+                            pix = self._drawing_pixmap_red if self._drawing_pixmap_red else pix
+
+                        orig_w_px = max(1.0, self.drawing_bounds.width * self.zoom_px_per_mm)
+                        orig_h_px = max(1.0, self.drawing_bounds.height * self.zoom_px_per_mm)
+                        new_w_px = max(1.0, pb.width * self.zoom_px_per_mm)
+                        new_h_px = max(1.0, pb.height * self.zoom_px_per_mm)
+                        sx = new_w_px / orig_w_px
+                        sy = new_h_px / orig_h_px
+
+                        new_tl = self.mm_to_screen(pb.min_x, pb.max_y)
+                        target_rect = QRectF(
+                            new_tl.x() - pad_draw * sx,
+                            new_tl.y() - pad_draw * sy,
+                            new_w_px + 2.0 * pad_draw * sx,
+                            new_h_px + 2.0 * pad_draw * sy,
+                        )
+                        painter.drawPixmap(target_rect, pix, QRectF(pix.rect()))
+                    else:
+                        draw_tl = self.mm_to_screen(self.drawing_bounds.min_x, self.drawing_bounds.max_y)
+                        drag_px = QPointF(drag_dx * self.zoom_px_per_mm, -drag_dy * self.zoom_px_per_mm)
+                        painter.drawPixmap(QPointF(draw_tl.x() - pad_draw, draw_tl.y() - pad_draw) + drag_px, pix)
 
         # 4. Selection Gizmo (Borders & Handles)
         if self.transformed_elements and not self.simulation_active:
@@ -1038,23 +1203,27 @@ class BuildPlateCanvas(QWidget):
         if not self.drawing_bounds.is_valid or (self.drawing_bounds.width == 0 and self.drawing_bounds.height == 0):
             return
 
-        drag_dx = self._drag_delta_mm[0] if self._is_dragging_drawing else 0.0
-        drag_dy = self._drag_delta_mm[1] if self._is_dragging_drawing else 0.0
-
-        cur_min_x = self.drawing_bounds.min_x + drag_dx
-        cur_min_y = self.drawing_bounds.min_y + drag_dy
-        cur_max_x = self.drawing_bounds.max_x + drag_dx
-        cur_max_y = self.drawing_bounds.max_y + drag_dy
+        if self._is_resizing_drawing and self._resize_preview_bounds is not None:
+            cur_min_x = self._resize_preview_bounds.min_x
+            cur_min_y = self._resize_preview_bounds.min_y
+            cur_max_x = self._resize_preview_bounds.max_x
+            cur_max_y = self._resize_preview_bounds.max_y
+        else:
+            drag_dx = self._drag_delta_mm[0] if self._is_dragging_drawing else 0.0
+            drag_dy = self._drag_delta_mm[1] if self._is_dragging_drawing else 0.0
+            cur_min_x = self.drawing_bounds.min_x + drag_dx
+            cur_min_y = self.drawing_bounds.min_y + drag_dy
+            cur_max_x = self.drawing_bounds.max_x + drag_dx
+            cur_max_y = self.drawing_bounds.max_y + drag_dy
 
         is_oob = False
-        if self._is_dragging_drawing:
-            if (
-                cur_min_x < 0.0
-                or cur_min_y < 0.0
-                or cur_max_x > self.machine.nominal_x_mm
-                or cur_max_y > self.machine.nominal_y_mm
-            ):
-                is_oob = True
+        if (
+            cur_min_x < 0.0
+            or cur_min_y < 0.0
+            or cur_max_x > self.machine.nominal_x_mm
+            or cur_max_y > self.machine.nominal_y_mm
+        ):
+            is_oob = True
 
         tl = self.mm_to_screen(cur_min_x, cur_max_y)
         br = self.mm_to_screen(cur_max_x, cur_min_y)
@@ -1067,14 +1236,38 @@ class BuildPlateCanvas(QWidget):
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawRect(box)
 
-        # Corner handles
-        painter.setPen(QPen(QColor("#0E1013"), 1.2))
-        painter.setBrush(handle_color)
-        for pt in (box.topLeft(), box.topRight(), box.bottomLeft(), box.bottomRight()):
-            painter.drawRect(QRectF(pt.x() - 4, pt.y() - 4, 8, 8))
+        # Handles rendering (Corners & Edge midpoints)
+        handles = self._get_handles()
+        is_resize_tool = (self.active_tool == CanvasTool.RESIZE)
+        corner_s = 10.0 if is_resize_tool else 8.0
+        edge_s = 8.0 if is_resize_tool else 6.0
+
+        for name, pt in handles.items():
+            is_hovered = (name == self._hovered_handle) or (name == self._resize_handle)
+            if name in ("TL", "TR", "BL", "BR"):
+                rect = QRectF(pt.x() - corner_s * 0.5, pt.y() - corner_s * 0.5, corner_s, corner_s)
+                if is_hovered:
+                    painter.setPen(QPen(QColor("#FFFFFF"), 1.8))
+                    painter.setBrush(QColor("#22C55E"))
+                else:
+                    painter.setPen(QPen(QColor("#0E1013"), 1.2))
+                    painter.setBrush(handle_color)
+                painter.drawRoundedRect(rect, 1.5, 1.5)
+            else:
+                rect = QRectF(pt.x() - edge_s * 0.5, pt.y() - edge_s * 0.5, edge_s, edge_s)
+                if is_hovered:
+                    painter.setPen(QPen(QColor("#FFFFFF"), 1.8))
+                    painter.setBrush(QColor("#22C55E"))
+                else:
+                    painter.setPen(QPen(QColor("#0E1013"), 1.2))
+                    painter.setBrush(QColor(handle_color.red(), handle_color.green(), handle_color.blue(), 180))
+                painter.drawEllipse(rect)
 
         # Dimension badge below selection
-        dim_text = f"{self.drawing_bounds.width:.2f} × {self.drawing_bounds.height:.2f} mm"
+        cur_w = cur_max_x - cur_min_x
+        cur_h = cur_max_y - cur_min_y
+        mode_str = " (Prop)" if self.is_proportional_scale else " (Livre)"
+        dim_text = f"{cur_w:.2f} × {cur_h:.2f} mm{mode_str if is_resize_tool else ''}"
         font = self._make_mono_font(8, bold=True)
         painter.setFont(font)
         fm = painter.fontMetrics()
@@ -1261,6 +1454,50 @@ class BuildPlateCanvas(QWidget):
                 event.accept()
                 return
 
+            # Check handle click first for both RESIZE and SELECT tools
+            if self.transformed_elements and self.drawing_bounds.is_valid:
+                handle = self._hit_test_handle(pos)
+                if handle is not None:
+                    self._is_resizing_drawing = True
+                    self._resize_handle = handle
+                    self._resize_start_mouse_mm = (mm_x, mm_y)
+                    self._resize_start_bounds = BoundingBox(
+                        self.drawing_bounds.min_x,
+                        self.drawing_bounds.min_y,
+                        self.drawing_bounds.max_x,
+                        self.drawing_bounds.max_y,
+                    )
+                    self._resize_start_transform = DocumentTransform.from_dict(self.doc_transform.to_dict())
+                    self._resize_preview_bounds = BoundingBox(
+                        self.drawing_bounds.min_x,
+                        self.drawing_bounds.min_y,
+                        self.drawing_bounds.max_x,
+                        self.drawing_bounds.max_y,
+                    )
+                    self.setCursor(self._cursor_for_handle(handle))
+                    event.accept()
+                    return
+
+            if self.active_tool == CanvasTool.RESIZE and self.transformed_elements:
+                b = self.drawing_bounds
+                if b.is_valid and (b.min_x <= mm_x <= b.max_x) and (b.min_y <= mm_y <= b.max_y):
+                    corners = [
+                        ("TL", b.min_x, b.max_y),
+                        ("TR", b.max_x, b.max_y),
+                        ("BL", b.min_x, b.min_y),
+                        ("BR", b.max_x, b.min_y),
+                    ]
+                    closest_h = min(corners, key=lambda c: (mm_x - c[1]) ** 2 + (mm_y - c[2]) ** 2)[0]
+                    self._is_resizing_drawing = True
+                    self._resize_handle = closest_h
+                    self._resize_start_mouse_mm = (mm_x, mm_y)
+                    self._resize_start_bounds = BoundingBox(b.min_x, b.min_y, b.max_x, b.max_y)
+                    self._resize_start_transform = DocumentTransform.from_dict(self.doc_transform.to_dict())
+                    self._resize_preview_bounds = BoundingBox(b.min_x, b.min_y, b.max_x, b.max_y)
+                    self.setCursor(self._cursor_for_handle(closest_h))
+                    event.accept()
+                    return
+
             if self.active_tool == CanvasTool.SELECT and self.transformed_elements:
                 # Check if user clicked inside or near the drawing bounds
                 b = self.drawing_bounds
@@ -1307,6 +1544,107 @@ class BuildPlateCanvas(QWidget):
             self.update()
             return
 
+        if self._is_resizing_drawing and self._resize_start_transform is not None:
+            handle = self._resize_handle
+            orig_b = self._resize_start_bounds
+            orig_t = self._resize_start_transform
+            if not orig_b or not orig_b.is_valid:
+                return
+
+            proportional = self.is_proportional_scale
+            if bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier):
+                proportional = not proportional
+
+            orig_w = max(0.1, orig_b.width)
+            orig_h = max(0.1, orig_b.height)
+
+            if handle == "TR":
+                raw_w = mm_x - orig_b.min_x
+                raw_h = mm_y - orig_b.min_y
+            elif handle == "TL":
+                raw_w = orig_b.max_x - mm_x
+                raw_h = mm_y - orig_b.min_y
+            elif handle == "BR":
+                raw_w = mm_x - orig_b.min_x
+                raw_h = orig_b.max_y - mm_y
+            elif handle == "BL":
+                raw_w = orig_b.max_x - mm_x
+                raw_h = orig_b.max_y - mm_y
+            elif handle == "MR":
+                raw_w = mm_x - orig_b.min_x
+                raw_h = orig_h
+            elif handle == "ML":
+                raw_w = orig_b.max_x - mm_x
+                raw_h = orig_h
+            elif handle == "TC":
+                raw_w = orig_w
+                raw_h = mm_y - orig_b.min_y
+            elif handle == "BC":
+                raw_w = orig_w
+                raw_h = orig_b.max_y - mm_y
+            else:
+                raw_w, raw_h = orig_w, orig_h
+
+            if proportional:
+                aspect = orig_w / orig_h
+                if handle in ("MR", "ML"):
+                    new_w = max(1.0, raw_w)
+                    new_h = new_w / aspect
+                elif handle in ("TC", "BC"):
+                    new_h = max(1.0, raw_h)
+                    new_w = new_h * aspect
+                else:
+                    sx = raw_w / orig_w
+                    sy = raw_h / orig_h
+                    scale = max(0.02, (sx + sy) * 0.5)
+                    new_w = max(1.0, orig_w * scale)
+                    new_h = max(1.0, orig_h * scale)
+            else:
+                new_w = max(1.0, raw_w)
+                new_h = max(1.0, raw_h)
+
+            if handle in ("TR", "MR"):
+                new_min_x = orig_b.min_x
+                new_max_x = new_min_x + new_w
+            elif handle in ("TL", "ML"):
+                new_max_x = orig_b.max_x
+                new_min_x = new_max_x - new_w
+            else:
+                new_min_x = orig_b.min_x
+                new_max_x = new_min_x + new_w
+
+            if handle in ("TR", "TL", "TC"):
+                new_min_y = orig_b.min_y
+                new_max_y = new_min_y + new_h
+            elif handle in ("BR", "BL", "BC"):
+                new_max_y = orig_b.max_y
+                new_min_y = new_max_y - new_h
+            else:
+                new_min_y = orig_b.min_y
+                new_max_y = new_min_y + new_h
+
+            self._resize_preview_bounds = BoundingBox(new_min_x, new_min_y, new_max_x, new_max_y)
+
+            native_b = self.svg_doc.compute_native_bounds() if self.svg_doc else None
+            native_w = native_b.width if (native_b and native_b.is_valid and native_b.width > 0) else orig_w
+            native_h = native_b.height if (native_b and native_b.is_valid and native_b.height > 0) else orig_h
+
+            new_t = DocumentTransform.from_dict(orig_t.to_dict())
+            new_t.scale_x = round(new_w / native_w, 4)
+            new_t.scale_y = round(new_h / native_h, 4)
+            new_t.pos_x_mm = round(new_min_x, 2)
+            new_t.pos_y_mm = round(new_min_y, 2)
+
+            now = time.perf_counter()
+            cur_st = (new_t.scale_x, new_t.scale_y, new_t.pos_x_mm, new_t.pos_y_mm)
+            if cur_st != self._last_preview_emitted_xy and (now - self._last_preview_time) >= 0.025:
+                self._last_preview_time = now
+                self._last_preview_emitted_xy = cur_st
+                self.transform_preview_changed.emit(new_t)
+
+            self.update()
+            return
+
         if self._is_dragging_drawing and self._drag_start_transform is not None:
             dx_mm = mm_x - self._drag_start_mouse_mm[0]
             dy_mm = mm_y - self._drag_start_mouse_mm[1]
@@ -1326,6 +1664,27 @@ class BuildPlateCanvas(QWidget):
             self.update()
             return
 
+        if not self._is_panning and not self._is_dragging_drawing and not self._is_resizing_drawing:
+            hovered = self._hit_test_handle(pos)
+            if hovered != self._hovered_handle:
+                self._hovered_handle = hovered
+                self.update()
+            if hovered:
+                self.setCursor(self._cursor_for_handle(hovered))
+            elif self.active_tool == CanvasTool.RESIZE:
+                self.setCursor(Qt.CursorShape.CrossCursor)
+            elif self.active_tool == CanvasTool.SELECT:
+                b = self.drawing_bounds
+                pad_mm = 4.0 / max(0.5, self.zoom_px_per_mm)
+                if (
+                    b.is_valid
+                    and (b.min_x - pad_mm) <= mm_x <= (b.max_x + pad_mm)
+                    and (b.min_y - pad_mm) <= mm_y <= (b.max_y + pad_mm)
+                ):
+                    self.setCursor(Qt.CursorShape.SizeAllCursor)
+                else:
+                    self.setCursor(Qt.CursorShape.ArrowCursor)
+
         # Only invalidate the thin ruler strips for the cursor tick marks
         # Avoid full plate repaint to maintain 60+ FPS during mouse movement
         rt = self.RULER_THICKNESS
@@ -1341,6 +1700,45 @@ class BuildPlateCanvas(QWidget):
 
         if self._is_measuring:
             self._is_measuring = False
+            self.update()
+            event.accept()
+            return
+
+        if self._is_resizing_drawing and self._resize_start_transform is not None:
+            self._is_resizing_drawing = False
+            old_t = self._resize_start_transform
+            preview_b = self._resize_preview_bounds
+            self._resize_preview_bounds = None
+            self._resize_start_transform = None
+            self._resize_start_bounds = None
+            self._resize_handle = None
+
+            if preview_b and preview_b.is_valid:
+                new_w = preview_b.width
+                new_h = preview_b.height
+                native_b = self.svg_doc.compute_native_bounds() if self.svg_doc else None
+                native_w = native_b.width if (native_b and native_b.is_valid and native_b.width > 0) else old_t.scale_x
+                native_h = native_b.height if (native_b and native_b.is_valid and native_b.height > 0) else old_t.scale_y
+
+                new_t = DocumentTransform.from_dict(old_t.to_dict())
+                new_t.scale_x = round(new_w / native_w, 4)
+                new_t.scale_y = round(new_h / native_h, 4)
+                new_t.pos_x_mm = round(preview_b.min_x, 2)
+                new_t.pos_y_mm = round(preview_b.min_y, 2)
+
+                self.doc_transform = DocumentTransform.from_dict(new_t.to_dict())
+                self.transform_preview_changed.emit(new_t)
+                self._invalidate_caches(plate=False, drawing=True)
+
+                if (
+                    abs(old_t.scale_x - new_t.scale_x) > 1e-4
+                    or abs(old_t.scale_y - new_t.scale_y) > 1e-4
+                    or abs(old_t.pos_x_mm - new_t.pos_x_mm) > 1e-4
+                    or abs(old_t.pos_y_mm - new_t.pos_y_mm) > 1e-4
+                ):
+                    self.transform_dragged.emit(old_t, new_t)
+
+            self.set_active_tool(self.active_tool)
             self.update()
             event.accept()
             return
@@ -1374,6 +1772,8 @@ class BuildPlateCanvas(QWidget):
         key = event.key()
         if key == Qt.Key.Key_V:
             self.set_active_tool(CanvasTool.SELECT)
+        elif key in (Qt.Key.Key_R, Qt.Key.Key_S):
+            self.set_active_tool(CanvasTool.RESIZE)
         elif key == Qt.Key.Key_H:
             self.set_active_tool(CanvasTool.PAN)
         elif key == Qt.Key.Key_M:

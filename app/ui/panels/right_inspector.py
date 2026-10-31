@@ -399,6 +399,29 @@ class RightInspectorPanel(QFrame):
         finally:
             self._updating_ui = False
 
+    def update_transform_preview(self, transform: DocumentTransform) -> None:
+        """Updates position, scale, and dimension readouts without emitting transform_changed signal during interactive drag/resize."""
+        self._updating_ui = True
+        try:
+            self.spn_pos_x.setValue(transform.pos_x_mm)
+            self.spn_pos_y.setValue(transform.pos_y_mm)
+            self.spn_scale_x.setValue(transform.scale_x)
+            self.spn_scale_y.setValue(transform.scale_y)
+            w = round(self._native_width_mm * transform.scale_x, 2)
+            h = round(self._native_height_mm * transform.scale_y, 2)
+            self.spn_width.setValue(w)
+            self.spn_height.setValue(h)
+            self.lbl_bounds_readout.setText(f"Bounds: {w:.2f} × {h:.2f} mm")
+        finally:
+            self._updating_ui = False
+
+    def set_lock_aspect(self, locked: bool) -> None:
+        self._updating_ui = True
+        try:
+            self.chk_lock_aspect.setChecked(locked)
+        finally:
+            self._updating_ui = False
+
     def current_transform(self) -> DocumentTransform:
         return DocumentTransform(
             pos_x_mm=self.spn_pos_x.value(),

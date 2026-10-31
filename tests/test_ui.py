@@ -291,3 +291,89 @@ def test_canvas_smooth_dragging_and_batched_paint(qapp):
 
     win.close()
 
+
+def test_canvas_interactive_corner_resize_tool(qapp):
+    from PySide6.QtCore import QEvent, QPointF
+    from PySide6.QtGui import QMouseEvent
+    from app.ui.canvas import CanvasTool
+
+    win = MainWindow(check_recovery=False, synchronous_pipeline=True)
+    win.show()
+    qapp.processEvents()
+
+    canvas = win.canvas
+    assert canvas.btn_resize_tool is not None
+    assert canvas.btn_resize_tool.isCheckable()
+
+    # 1. Activate Resize Tool via button
+    canvas.btn_resize_tool.click()
+    assert canvas.active_tool == CanvasTool.RESIZE
+    assert canvas.btn_resize_tool.isChecked()
+
+    # 2. Test mode switching: Proportional vs Freeform
+    assert canvas.is_proportional_scale is True
+    canvas.set_proportional_scaling(False)
+    assert canvas.is_proportional_scale is False
+    assert not win.right_inspector.chk_lock_aspect.isChecked()
+
+    canvas.set_proportional_scaling(True)
+    assert canvas.is_proportional_scale is True
+    assert win.right_inspector.chk_lock_aspect.isChecked()
+
+    # 3. Handle detection
+    handles = canvas._get_handles()
+    assert "TL" in handles and "TR" in handles and "BL" in handles and "BR" in handles
+    tr_pt = handles["TR"]
+    assert canvas._hit_test_handle(tr_pt) == "TR"
+
+    # 4. Interactive Corner Dragging (scale up Top-Right handle)
+    initial_w = win.current_stats.drawing_width_mm
+    old_scale_x = win.project.doc_transform.scale_x
+
+    press_ev = QMouseEvent(
+        QEvent.Type.MouseButtonPress,
+        tr_pt,
+        Qt.MouseButton.LeftButton,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    canvas.mousePressEvent(press_ev)
+    assert canvas._is_resizing_drawing is True
+    assert canvas._resize_handle == "TR"
+
+    # Drag TR 20mm right (+X) and 20mm up (+Y)
+    dx_px = 20.0 * canvas.zoom_px_per_mm
+    dy_px = -20.0 * canvas.zoom_px_per_mm
+    drag_pt = QPointF(tr_pt.x() + dx_px, tr_pt.y() + dy_px)
+
+    move_ev = QMouseEvent(
+        QEvent.Type.MouseMove,
+        drag_pt,
+        Qt.MouseButton.NoButton,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    canvas.mouseMoveEvent(move_ev)
+    assert canvas._resize_preview_bounds is not None
+    assert canvas._resize_preview_bounds.width > initial_w
+
+    # Release
+    release_ev = QMouseEvent(
+        QEvent.Type.MouseButtonRelease,
+        drag_pt,
+        Qt.MouseButton.LeftButton,
+        Qt.MouseButton.NoButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    canvas.mouseReleaseEvent(release_ev)
+    assert not canvas._is_resizing_drawing
+    assert win.project.doc_transform.scale_x > old_scale_x
+
+    # Verify Undo
+    assert win.undo_stack.canUndo()
+    win.undo_stack.undo()
+    assert abs(win.project.doc_transform.scale_x - old_scale_x) < 1e-3
+
+    win.close()
+
+

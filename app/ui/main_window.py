@@ -438,6 +438,8 @@ class MainWindow(QMainWindow):
         # Canvas signals
         self.canvas.transform_preview_changed.connect(self._on_canvas_transform_preview)
         self.canvas.transform_dragged.connect(self._on_canvas_transform_dragged)
+        self.canvas.scaling_mode_changed.connect(self.right_inspector.set_lock_aspect)
+        self.right_inspector.chk_lock_aspect.toggled.connect(self.canvas.set_proportional_scaling)
 
         # Simulator signals
         self.simulator_bar.simulation_updated.connect(self.canvas.set_simulation_state)
@@ -628,7 +630,9 @@ class MainWindow(QMainWindow):
     def _on_canvas_transform_preview(self, new_t: DocumentTransform) -> None:
         self.project.doc_transform.pos_x_mm = new_t.pos_x_mm
         self.project.doc_transform.pos_y_mm = new_t.pos_y_mm
-        self.right_inspector.update_position_preview(new_t.pos_x_mm, new_t.pos_y_mm)
+        self.project.doc_transform.scale_x = new_t.scale_x
+        self.project.doc_transform.scale_y = new_t.scale_y
+        self.right_inspector.update_transform_preview(new_t)
 
     def _on_inspector_transform_changed(self, new_t: DocumentTransform) -> None:
         old_t = DocumentTransform.from_dict(self.project.doc_transform.to_dict())
@@ -636,7 +640,12 @@ class MainWindow(QMainWindow):
         self.undo_stack.push(cmd)
 
     def _on_canvas_transform_dragged(self, old_t: DocumentTransform, new_t: DocumentTransform) -> None:
-        cmd = TransformChangeCommand(old_t, new_t, self._apply_transform_direct, "Move Drawing")
+        is_resize = (
+            abs(old_t.scale_x - new_t.scale_x) > 1e-4
+            or abs(old_t.scale_y - new_t.scale_y) > 1e-4
+        )
+        desc = "Resize Drawing" if is_resize else "Move Drawing"
+        cmd = TransformChangeCommand(old_t, new_t, self._apply_transform_direct, desc)
         self.undo_stack.push(cmd)
 
     def action_center_on_plate(self) -> None:
