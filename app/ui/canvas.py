@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import time
 from typing import Optional
 
 from PySide6.QtCore import QLineF, QPointF, QRectF, Qt, Signal
@@ -15,6 +16,7 @@ from PySide6.QtGui import (
     QPainter,
     QPainterPath,
     QPen,
+    QPixmap,
     QPolygonF,
     QWheelEvent,
 )
@@ -119,8 +121,19 @@ class BuildPlateCanvas(QWidget):
         self._cached_grid_h: float = 0.0
         self._last_cursor_label_text: str = ""
         self._last_preview_emitted_xy: Optional[tuple[float, float]] = None
+        self._last_preview_time: float = 0.0
         self._font_ruler: Optional[QFont] = None
         self._font_mono_8_bold: Optional[QFont] = None
+
+        # Two-layer display cache (Plate surface & SVG trajectory layers)
+        self._plate_pixmap: Optional[QPixmap] = None
+        self._plate_pixmap_zoom: float = 0.0
+        self._drawing_pixmap: Optional[QPixmap] = None
+        self._drawing_pixmap_red: Optional[QPixmap] = None
+        self._drawing_pixmap_bounds: BoundingBox = BoundingBox(0, 0, 0, 0)
+        self._drawing_pixmap_zoom: float = 0.0
+        self._drawing_pad_px: float = 14.0
+        self._plate_pad_px: float = 24.0
 
         self._build_overlay_hud()
 
@@ -238,12 +251,23 @@ class BuildPlateCanvas(QWidget):
             self.setCursor(Qt.CursorShape.ArrowCursor)
         self.update()
 
+    def _invalidate_caches(self, plate: bool = True, drawing: bool = True) -> None:
+        if plate:
+            self._plate_pixmap = None
+            self._plate_pixmap_zoom = 0.0
+        if drawing:
+            self._drawing_pixmap = None
+            self._drawing_pixmap_red = None
+            self._drawing_pixmap_zoom = 0.0
+
     def _on_toggle_grid(self, checked: bool) -> None:
         self.show_grid = checked
+        self._invalidate_caches(plate=True, drawing=False)
         self.update()
 
     def _on_toggle_travel(self, checked: bool) -> None:
         self.show_travel_moves = checked
+        self._invalidate_caches(plate=False, drawing=True)
         self.update()
 
     # ==========================================================================
@@ -278,6 +302,7 @@ class BuildPlateCanvas(QWidget):
         bottom_px = (self.height() - self.RULER_THICKNESS - plate_h_px) * 0.5
         self.pan_offset_px = QPointF(left_px, max(45.0, bottom_px))
         self._update_zoom_label()
+        self._invalidate_caches(plate=True, drawing=True)
         self.update()
 
     def zoom_by(self, factor: float, anchor_px: Optional[QPointF] = None) -> None:
@@ -290,6 +315,7 @@ class BuildPlateCanvas(QWidget):
         dy = new_screen.y() - anchor_px.y()
         self.pan_offset_px = QPointF(self.pan_offset_px.x() + dx, self.pan_offset_px.y() + dy)
         self._update_zoom_label()
+        self._invalidate_caches(plate=True, drawing=True)
         self.update()
 
     def _update_zoom_label(self) -> None:
@@ -408,12 +434,229 @@ class BuildPlateCanvas(QWidget):
         self.moves = moves
         self._rebuild_cached_grid()
         self._rebuild_cached_trajectories()
+        self._invalidate_caches(plate=True, drawing=True)
         self.update()
 
     def set_simulation_state(self, state: Optional[SimulationState], active: bool) -> None:
         self.sim_state = state
         self.simulation_active = active
         self.update()
+
+    def _render_plate_cache(self) -> None:
+        """Renders the physical build plate, grid, safety margins, and origin bullseye to a cached QPixmap."""
+        z = self.zoom_px_per_mm
+        w_mm = self.machine.nominal_x_mm
+        h_mm = self.machine.nominal_y_mm
+        pad = self._plate_pad_px
+
+        plate_w_px = max(10, int(math.ceil(w_mm * z + pad * 2.0)))
+        # Extra bottom padding for the front PEI alignment tab lip
+        plate_h_px = max(10, int(math.ceil(h_mm * z + pad * 2.0 + 30.0)))
+
+        pix = QPixmap(plate_w_px, plate_h_px)
+        pix.fill(Qt.GlobalColor.transparent)
+
+        p = QPainter(pix)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+
+        # In plate pixmap coordinates:
+        # Build plate top-left (0, h_mm) is at (pad, pad)
+        plate_rect = QRectF(pad, pad, w_mm * z, h_mm * z)
+
+        # 1. Drop shadow
+        shadow_rect = plate_rect.translated(0, 6)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor(0, 0, 0, 110))
+        p.drawRoundedRect(shadow_rect, 10.0, 10.0)
+
+        # 2. Textured PEI build plate body
+        p.setPen(QPen(QColor("#38414E"), 2.0))
+        p.setBrush(QColor("#171A20"))
+        p.drawRoundedRect(plate_rect, 8.0, 8.0)
+
+        # 3. Front Bambu Lab PEI alignment tab lip
+        tab_w = plate_rect.width() * 0.36
+        tab_h = max(12.0, min(22.0, 7.0 * z))
+        tab_rect = QRectF(
+            plate_rect.center().x() - tab_w * 0.5,
+            plate_rect.bottom() - 2.0,
+            tab_w,
+            tab_h,
+        )
+        p.setPen(QPen(QColor("#38414E"), 1.5))
+        p.setBrush(QColor("#1D222A"))
+        p.drawRoundedRect(tab_rect, 4.0, 4.0)
+
+        # 4. Silkscreen branding
+        if z >= 1.2:
+            font = self._make_ui_font(max(7, min(10, int(z * 2.6))), bold=True)
+            p.setFont(font)
+            p.setPen(QColor("#475569"))
+            p.drawText(
+                tab_rect,
+                Qt.AlignmentFlag.AlignCenter,
+                f"BAMBU LAB A1 MINI  •  {w_mm:.0f}×{h_mm:.0f} MM",
+            )
+
+        # 5. Transform for plate internal geometry: (0, 0) at front-left
+        p.save()
+        p.translate(pad, pad + h_mm * z)
+        p.scale(z, -z)
+
+        # Millimeter Grid
+        if self.show_grid:
+            if not self._cached_grid_minor and not self._cached_grid_major:
+                self._rebuild_cached_grid()
+
+            if z >= 8.0 and self._cached_grid_fine:
+                pen_fine = QPen(QColor(255, 255, 255, 10), 1.0)
+                pen_fine.setCosmetic(True)
+                p.setPen(pen_fine)
+                p.drawLines(self._cached_grid_fine)
+
+            pen_minor = QPen(QColor("#222730"), 1.0)
+            pen_minor.setCosmetic(True)
+            p.setPen(pen_minor)
+            p.drawLines(self._cached_grid_minor)
+
+            pen_major = QPen(QColor("#2E3542"), 1.2)
+            pen_major.setCosmetic(True)
+            p.setPen(pen_major)
+            p.drawLines(self._cached_grid_major)
+
+        # Safety Margins (in plate mm)
+        if self.show_safety_margins:
+            safe_rect = QRectF(
+                self.machine.usable_min_x,
+                self.machine.usable_min_y,
+                self.machine.usable_width_mm,
+                self.machine.usable_height_mm,
+            )
+            pen_safe = QPen(QColor(245, 158, 11, 140), 1.2, Qt.PenStyle.DashLine)
+            pen_safe.setCosmetic(True)
+            p.setPen(pen_safe)
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawRect(safe_rect)
+
+        # Coordinate axes & Origin (0,0) bullseye
+        p.setPen(QPen(QColor("#EF4444"), 2.2))
+        p.drawLine(QLineF(0.0, 0.0, 25.0, 0.0))
+        p.setPen(QPen(QColor("#22C55E"), 2.2))
+        p.drawLine(QLineF(0.0, 0.0, 0.0, 25.0))
+        p.setPen(QPen(QColor("#F8FAFC"), 1.5))
+        p.setBrush(QColor("#EF4444"))
+        p.drawEllipse(QPointF(0.0, 0.0), 3.0, 3.0)
+
+        p.restore()
+
+        # Origin text in screen space
+        origin_pt = QPointF(pad, pad + h_mm * z)
+        font = self._make_mono_font(8, bold=True)
+        p.setFont(font)
+        p.setPen(QColor("#94A3B8"))
+        p.drawText(origin_pt + QPointF(-28, 16), "(0,0)")
+
+        # Safe area label
+        if self.show_safety_margins and z >= 1.8:
+            safe_tl = QPointF(pad + self.machine.usable_min_x * z, pad + (h_mm - self.machine.usable_max_y) * z)
+            safe_w = self.machine.usable_width_mm * z
+            safe_h = self.machine.usable_height_mm * z
+            safe_screen_rect = QRectF(safe_tl.x(), safe_tl.y(), safe_w, safe_h)
+            font_safe = self._make_mono_font(8)
+            p.setFont(font_safe)
+            p.setPen(QColor(245, 158, 11, 160))
+            p.drawText(
+                safe_screen_rect.adjusted(6, 4, -6, -4),
+                Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignRight,
+                f"SAFE AREA ({self.machine.usable_width_mm:.0f}×{self.machine.usable_height_mm:.0f} mm)",
+            )
+
+        p.end()
+
+        self._plate_pixmap = pix
+        self._plate_pixmap_zoom = z
+
+    def _render_drawing_cache(self) -> None:
+        """Renders the SVG toolpath trajectories (polylines + travel lines) to a transparent cached QPixmap."""
+        if not self.moves or not self.drawing_bounds.is_valid or (self.drawing_bounds.width <= 0 and self.drawing_bounds.height <= 0):
+            self._drawing_pixmap = None
+            self._drawing_pixmap_red = None
+            self._drawing_pixmap_zoom = 0.0
+            return
+
+        b = self.drawing_bounds
+        z = self.zoom_px_per_mm
+        pad = self._drawing_pad_px
+
+        w_px = max(10, int(math.ceil(b.width * z + pad * 2.0)))
+        h_px = max(10, int(math.ceil(b.height * z + pad * 2.0)))
+
+        stroke_px = max(1.6, self.pen.tip_diameter_mm * z)
+
+        pen_draw_normal = QPen(QColor(self.pen.color_hex or "#22C55E"), stroke_px)
+        pen_draw_normal.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen_draw_normal.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        pen_draw_normal.setCosmetic(True)
+
+        pen_draw_red = QPen(QColor("#EF4444"), stroke_px)
+        pen_draw_red.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen_draw_red.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        pen_draw_red.setCosmetic(True)
+
+        pen_travel = QPen(QColor(56, 189, 248, 115), 1.0, Qt.PenStyle.DashLine)
+        pen_travel.setCapStyle(Qt.PenCapStyle.FlatCap)
+        pen_travel.setCosmetic(True)
+
+        # 1. Normal Color Pixmap
+        pix_normal = QPixmap(w_px, h_px)
+        pix_normal.fill(Qt.GlobalColor.transparent)
+        p = QPainter(pix_normal)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        p.translate(pad - b.min_x * z, (h_px - pad) + b.min_y * z)
+        p.scale(z, -z)
+
+        if self.show_travel_moves and self._cached_travel_lines:
+            p.setPen(pen_travel)
+            p.drawLines(self._cached_travel_lines)
+
+        p.setPen(pen_draw_normal)
+        for poly in self._cached_draw_ok_polys:
+            p.drawPolyline(poly)
+
+        if self._cached_draw_err_lines:
+            pen_err = QPen(QColor("#EF4444"), stroke_px + 0.6)
+            pen_err.setCapStyle(Qt.PenCapStyle.FlatCap)
+            pen_err.setCosmetic(True)
+            p.setPen(pen_err)
+            p.drawLines(self._cached_draw_err_lines)
+        p.end()
+
+        # 2. Out-of-Bounds Warning Pixmap (All red)
+        pix_red = QPixmap(w_px, h_px)
+        pix_red.fill(Qt.GlobalColor.transparent)
+        p2 = QPainter(pix_red)
+        p2.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        p2.translate(pad - b.min_x * z, (h_px - pad) + b.min_y * z)
+        p2.scale(z, -z)
+
+        if self.show_travel_moves and self._cached_travel_lines:
+            p2.setPen(pen_travel)
+            p2.drawLines(self._cached_travel_lines)
+
+        p2.setPen(pen_draw_red)
+        for poly in self._cached_draw_ok_polys:
+            p2.drawPolyline(poly)
+
+        if self._cached_draw_err_lines:
+            p2.setPen(pen_draw_red)
+            p2.drawLines(self._cached_draw_err_lines)
+        p2.end()
+
+        self._drawing_pixmap = pix_normal
+        self._drawing_pixmap_red = pix_red
+        self._drawing_pixmap_bounds = BoundingBox(b.min_x, b.min_y, b.max_x, b.max_y)
+        self._drawing_pixmap_zoom = z
 
     # ==========================================================================
     # Custom Paint Engine
@@ -430,73 +673,89 @@ class BuildPlateCanvas(QWidget):
         return font
 
     def paintEvent(self, event) -> None:
-        rt = self.RULER_THICKNESS
-        event_rect = event.rect()
-
-        # Ultra-fast path: If only rulers need repainting (during mouse hover tick updates),
-        # skip drawing the build plate, grid, and trajectories entirely!
-        if (
-            not self._is_dragging_drawing
-            and not self._is_panning
-            and not self._is_measuring
-            and not self.simulation_active
-            and (event_rect.bottom() <= rt or event_rect.right() <= rt)
-        ):
-            painter = QPainter(self)
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-            if self.show_rulers:
-                self._draw_rulers(painter)
-            painter.end()
-            return
-
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
 
-        # 1. Backdrop fill
+        # 1. Dark CAD Backdrop Fill
         painter.fillRect(self.rect(), QColor("#0E1013"))
 
-        # 2. Draw Build Plate Surface & Hardware Details
-        self._draw_build_plate(painter)
+        # 2. Draw Build Plate Layer from Cache (PEI bed, drop shadow, grid, safety margins, axes)
+        if self._plate_pixmap is None or self._plate_pixmap_zoom != self.zoom_px_per_mm:
+            self._render_plate_cache()
 
-        # 3. Draw Millimeter Grid
-        if self.show_grid:
-            self._draw_grid(painter)
+        pad_plate = self._plate_pad_px
+        plate_tl = self.mm_to_screen(0.0, self.machine.nominal_y_mm)
+        painter.drawPixmap(QPointF(plate_tl.x() - pad_plate, plate_tl.y() - pad_plate), self._plate_pixmap)
 
-        # 4. Draw Safety Margins & Usable Area
-        if self.show_safety_margins:
-            self._draw_safety_margins(painter)
+        # 3. Draw SVG Toolpath Trajectories Layer
+        if self.moves and self.show_toolpath_preview:
+            if self.simulation_active and self.sim_state is not None:
+                self._draw_progressive_simulation(painter)
+            else:
+                if (
+                    self._drawing_pixmap is None
+                    or self._drawing_pixmap_zoom != self.zoom_px_per_mm
+                    or self._drawing_pixmap_bounds != self.drawing_bounds
+                ):
+                    self._render_drawing_cache()
 
-        # 5. Draw Coordinate Axes & Origin Marker
-        self._draw_axes_and_origin(painter)
+                if self._drawing_pixmap is not None:
+                    # Check if currently dragging outside plate limits
+                    is_oob_drag = False
+                    drag_dx = self._drag_delta_mm[0] if self._is_dragging_drawing else 0.0
+                    drag_dy = self._drag_delta_mm[1] if self._is_dragging_drawing else 0.0
 
-        # 6. Draw Toolpaths & SVG Preview + 7. Selection Gizmo
-        has_drag_offset = self._is_dragging_drawing and (
-            self._drag_delta_mm[0] != 0.0 or self._drag_delta_mm[1] != 0.0
-        )
-        if has_drag_offset:
-            painter.save()
-            sdx = self._drag_delta_mm[0] * self.zoom_px_per_mm
-            sdy = -self._drag_delta_mm[1] * self.zoom_px_per_mm
-            painter.translate(sdx, sdy)
+                    if self._is_dragging_drawing and self.drawing_bounds.is_valid:
+                        cur_min_x = self.drawing_bounds.min_x + drag_dx
+                        cur_min_y = self.drawing_bounds.min_y + drag_dy
+                        cur_max_x = self.drawing_bounds.max_x + drag_dx
+                        cur_max_y = self.drawing_bounds.max_y + drag_dy
+                        if (
+                            cur_min_x < 0.0
+                            or cur_min_y < 0.0
+                            or cur_max_x > self.machine.nominal_x_mm
+                            or cur_max_y > self.machine.nominal_y_mm
+                        ):
+                            is_oob_drag = True
 
-        self._draw_trajectories(painter)
+                    pix = self._drawing_pixmap_red if (is_oob_drag and self._drawing_pixmap_red) else self._drawing_pixmap
+                    pad_draw = self._drawing_pad_px
+                    draw_tl = self.mm_to_screen(self.drawing_bounds.min_x, self.drawing_bounds.max_y)
+                    drag_px = QPointF(drag_dx * self.zoom_px_per_mm, -drag_dy * self.zoom_px_per_mm)
+                    painter.drawPixmap(QPointF(draw_tl.x() - pad_draw, draw_tl.y() - pad_draw) + drag_px, pix)
 
+        # 4. Selection Gizmo (Borders & Handles)
         if self.transformed_elements and not self.simulation_active:
             self._draw_selection_gizmo(painter)
 
-        if has_drag_offset:
+        # 5. Highlight individual selected SVG element if any
+        if self.selected_element_id and self.transformed_elements:
+            pen_sel = QPen(QColor("#FACC15"), 2.4)
+            pen_sel.setCosmetic(True)
+            painter.setPen(pen_sel)
+            painter.save()
+            painter.translate(self.pan_offset_px.x(), self.height() - self.pan_offset_px.y())
+            painter.scale(self.zoom_px_per_mm, -self.zoom_px_per_mm)
+            if self._is_dragging_drawing:
+                painter.translate(self._drag_delta_mm[0], self._drag_delta_mm[1])
+            for el, polys in self.transformed_elements:
+                if getattr(el, "id", "") == self.selected_element_id:
+                    for poly in polys:
+                        if len(poly) >= 2:
+                            qpoly = QPolygonF([QPointF(px, py) for px, py in poly])
+                            painter.drawPolyline(qpoly)
             painter.restore()
 
-        # 8. Draw Simulator Toolhead Marker (when active or moves loaded)
+        # 6. Simulator Toolhead Marker
         if self.sim_state is not None and self.moves:
             self._draw_simulator_toolhead(painter)
 
-        # 9. Draw Measurement Overlay
+        # 7. Measurement Overlay
         if self._measure_start_mm and self._measure_end_mm:
             self._draw_measurement_overlay(painter)
 
-        # 10. Draw Top & Left Millimeter Rulers
+        # 8. Top & Left Millimeter Rulers
         if self.show_rulers:
             self._draw_rulers(painter)
 
@@ -779,16 +1038,16 @@ class BuildPlateCanvas(QWidget):
         if not self.drawing_bounds.is_valid or (self.drawing_bounds.width == 0 and self.drawing_bounds.height == 0):
             return
 
-        tl = self.mm_to_screen(self.drawing_bounds.min_x, self.drawing_bounds.max_y)
-        br = self.mm_to_screen(self.drawing_bounds.max_x, self.drawing_bounds.min_y)
-        box = QRectF(tl, br)
+        drag_dx = self._drag_delta_mm[0] if self._is_dragging_drawing else 0.0
+        drag_dy = self._drag_delta_mm[1] if self._is_dragging_drawing else 0.0
+
+        cur_min_x = self.drawing_bounds.min_x + drag_dx
+        cur_min_y = self.drawing_bounds.min_y + drag_dy
+        cur_max_x = self.drawing_bounds.max_x + drag_dx
+        cur_max_y = self.drawing_bounds.max_y + drag_dy
 
         is_oob = False
-        if self._is_dragging_drawing and self.drawing_bounds.is_valid:
-            cur_min_x = self.drawing_bounds.min_x + self._drag_delta_mm[0]
-            cur_min_y = self.drawing_bounds.min_y + self._drag_delta_mm[1]
-            cur_max_x = self.drawing_bounds.max_x + self._drag_delta_mm[0]
-            cur_max_y = self.drawing_bounds.max_y + self._drag_delta_mm[1]
+        if self._is_dragging_drawing:
             if (
                 cur_min_x < 0.0
                 or cur_min_y < 0.0
@@ -796,6 +1055,10 @@ class BuildPlateCanvas(QWidget):
                 or cur_max_y > self.machine.nominal_y_mm
             ):
                 is_oob = True
+
+        tl = self.mm_to_screen(cur_min_x, cur_max_y)
+        br = self.mm_to_screen(cur_max_x, cur_min_y)
+        box = QRectF(tl, br)
 
         gizmo_color = QColor("#EF4444") if is_oob else QColor(56, 189, 248, 180)
         handle_color = QColor("#EF4444") if is_oob else QColor("#38BDF8")
@@ -1052,8 +1315,11 @@ class BuildPlateCanvas(QWidget):
             new_t.pos_x_mm = round(self._drag_start_transform.pos_x_mm + dx_mm, 2)
             new_t.pos_y_mm = round(self._drag_start_transform.pos_y_mm + dy_mm, 2)
 
+            # Throttle inspector spinbox updates during drag to 40 Hz to avoid event-loop clogging
+            now = time.perf_counter()
             cur_xy = (new_t.pos_x_mm, new_t.pos_y_mm)
-            if cur_xy != self._last_preview_emitted_xy:
+            if cur_xy != self._last_preview_emitted_xy and (now - self._last_preview_time) >= 0.025:
+                self._last_preview_time = now
                 self._last_preview_emitted_xy = cur_xy
                 self.transform_preview_changed.emit(new_t)
 
@@ -1091,6 +1357,10 @@ class BuildPlateCanvas(QWidget):
             new_t.pos_x_mm = round(old_t.pos_x_mm + dx_mm, 2)
             new_t.pos_y_mm = round(old_t.pos_y_mm + dy_mm, 2)
             self.doc_transform = DocumentTransform.from_dict(new_t.to_dict())
+
+            # Ensure inspector reflects final coordinates
+            self.transform_preview_changed.emit(new_t)
+            self._invalidate_caches(plate=False, drawing=True)
 
             if (
                 abs(old_t.pos_x_mm - new_t.pos_x_mm) > 1e-4
