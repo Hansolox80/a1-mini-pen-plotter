@@ -380,6 +380,10 @@ class LeftSidebar(QFrame):
         btn_cal.clicked.connect(self.calibration_wizard_requested.emit)
         cp_layout.addWidget(btn_cal)
 
+        self.lbl_pen_cal_status = QLabel(card_pen)
+        self.lbl_pen_cal_status.setWordWrap(True)
+        cp_layout.addWidget(self.lbl_pen_cal_status)
+
         vbox.addWidget(card_pen)
 
         # Pen Z Heights & Offsets Card
@@ -602,11 +606,13 @@ class LeftSidebar(QFrame):
 
     def populate_svg_document(self, doc: Optional[ParsedSvgDocument]) -> None:
         self._updating_ui = True
+        self.tree_elements.setUpdatesEnabled(False)
         self.tree_elements.clear()
         self.list_svg_warnings.clear()
 
         if doc is None:
             self.lbl_svg_info.setText("No SVG file loaded")
+            self.tree_elements.setUpdatesEnabled(True)
             self._updating_ui = False
             return
 
@@ -632,7 +638,12 @@ class LeftSidebar(QFrame):
             e_item.setCheckState(0, Qt.CheckState.Checked if el.visible else Qt.CheckState.Unchecked)
             e_item.setData(0, Qt.ItemDataRole.UserRole, el.id)
 
-        self.tree_elements.expandAll()
+        if len(doc.elements) <= 250:
+            self.tree_elements.expandAll()
+        else:
+            for l_item in layers_map.values():
+                l_item.setExpanded(True)
+        self.tree_elements.setUpdatesEnabled(True)
 
         if not doc.warnings:
             item = QListWidgetItem("✓ All SVG elements parsed cleanly with zero warnings.")
@@ -714,7 +725,7 @@ class LeftSidebar(QFrame):
         # Pen combo
         self.cmb_pen.clear()
         for p_id, p_prof in self.profile_manager.pens.items():
-            cal_tag = " [Calibrated]" if p_prof.is_calibrated else ""
+            cal_tag = " [Calibrated]" if p_prof.is_calibrated else " [Uncalibrated]"
             self.cmb_pen.addItem(f"{p_prof.name}{cal_tag}", p_id)
         if select_pen_id:
             idx = self.cmb_pen.findData(select_pen_id)
@@ -767,6 +778,25 @@ class LeftSidebar(QFrame):
         self.spn_travel_speed.setValue(p.travel_speed_mm_s)
         self.spn_z_speed.setValue(p.z_speed_mm_s)
         self.spn_dwell_ms.setValue(p.stabilization_delay_ms)
+        if hasattr(self, "lbl_pen_cal_status"):
+            if p.is_calibrated:
+                self.lbl_pen_cal_status.setText(
+                    f"✅ <b>PHYSICALLY CALIBRATED</b><br>"
+                    f"<span style='color: #94A3B8; font-size: 11px;'>Contact Z = {p.drawing_z_mm:.2f} mm | Up Z = {p.pen_up_z_mm:.2f} mm</span>"
+                )
+                self.lbl_pen_cal_status.setStyleSheet(
+                    "background-color: rgba(34, 197, 94, 0.12); color: #22C55E; "
+                    "border: 1px solid rgba(34, 197, 94, 0.35); border-radius: 4px; padding: 6px;"
+                )
+            else:
+                self.lbl_pen_cal_status.setText(
+                    f"⚠️ <b>NOT CALIBRATED (Default Presumptions)</b><br>"
+                    f"<span style='color: #FBBF24; font-size: 11px;'>Values are theoretical. Run Calibration Wizard to measure real contact Z on your A1 Mini.</span>"
+                )
+                self.lbl_pen_cal_status.setStyleSheet(
+                    "background-color: rgba(245, 158, 11, 0.12); color: #F59E0B; "
+                    "border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 4px; padding: 6px;"
+                )
         self._updating_ui = False
 
     def _on_machine_combo_changed(self) -> None:

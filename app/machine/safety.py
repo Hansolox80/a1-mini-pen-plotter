@@ -129,9 +129,10 @@ FORBIDDEN_GCODE_COMMANDS = {
 class SafetyValidator:
     """Validates toolpath movements and generated G-code against machine and pen constraints."""
 
-    def __init__(self, machine: MachineProfile, pen: PenProfile) -> None:
+    def __init__(self, machine: MachineProfile, pen: PenProfile, air_draw_mode: bool = False) -> None:
         self.machine = machine
         self.pen = pen
+        self.air_draw_mode = air_draw_mode
 
     def validate(
         self,
@@ -256,18 +257,32 @@ class SafetyValidator:
             )
 
         if not self.pen.is_calibrated:
-            report.issues.append(
-                ValidationIssue(
-                    severity=ValidationSeverity.WARNING,
-                    code="UNCALIBRATED_PEN_PROFILE",
-                    title="Pen Profile Not Yet Calibrated",
-                    message=(
-                        f"Pen profile '{self.pen.name}' uses default or unverified Z heights "
-                        f"(Draw Z={self.pen.drawing_z_mm:.2f} mm, Up Z={self.pen.pen_up_z_mm:.2f} mm). "
-                        "Run the Calibration Wizard to confirm physical contact height."
-                    ),
+            if self.air_draw_mode:
+                report.issues.append(
+                    ValidationIssue(
+                        severity=ValidationSeverity.WARNING,
+                        code="AIR_DRAW_UNCALIBRATED",
+                        title="Air Draw Mode Active (Safe Dry Run)",
+                        message=(
+                            f"Pen profile '{self.pen.name}' is uncalibrated, but Air Draw Mode is enabled "
+                            f"(offset +15 mm above plate). Safe for dry testing without bed contact."
+                        ),
+                    )
                 )
-            )
+            else:
+                report.issues.append(
+                    ValidationIssue(
+                        severity=ValidationSeverity.CRITICAL,
+                        code="UNCALIBRATED_PEN_PROFILE",
+                        title="Pen Profile Not Physically Calibrated",
+                        message=(
+                            f"Pen profile '{self.pen.name}' uses unverified default Z heights "
+                            f"(Draw Z={self.pen.drawing_z_mm:.2f} mm, Up Z={self.pen.pen_up_z_mm:.2f} mm). "
+                            "Physical calibration via the Pen Calibration Wizard is required before exporting "
+                            "execution-ready G-code (or enable Air Draw Mode to test safely in the air)."
+                        ),
+                    )
+                )
 
     def _validate_moves(self, moves: list[ToolpathMove], report: SafetyValidationReport) -> None:
         min_x = float("inf")
@@ -375,22 +390,27 @@ class SafetyValidator:
                     )
                 )
 
-            # Check configured usable safety margins for drawing moves
+            # Check configured usable safety margins for drawing moves (both start and end)
             if mv.move_type == MovementType.DRAW:
-                if (
-                    mv.end_x < self.machine.usable_min_x - 1e-5
+                out_of_margin = (
+                    mv.start_x < self.machine.usable_min_x - 1e-5
+                    or mv.start_x > self.machine.usable_max_x + 1e-5
+                    or mv.start_y < self.machine.usable_min_y - 1e-5
+                    or mv.start_y > self.machine.usable_max_y + 1e-5
+                    or mv.end_x < self.machine.usable_min_x - 1e-5
                     or mv.end_x > self.machine.usable_max_x + 1e-5
                     or mv.end_y < self.machine.usable_min_y - 1e-5
                     or mv.end_y > self.machine.usable_max_y + 1e-5
-                ):
+                )
+                if out_of_margin:
                     add_issue_throttled(
                         ValidationIssue(
                             severity=ValidationSeverity.CRITICAL,
                             code="OUTSIDE_SAFETY_MARGIN",
                             title="Drawing Movement Enters Safety Margin",
                             message=(
-                                f"Drawing coordinate (X={mv.end_x:.2f}, Y={mv.end_y:.2f} mm) violates the "
-                                f"configured usable area soft stop X[{self.machine.usable_min_x:.1f}..{self.machine.usable_max_x:.1f}], "
+                                f"Drawing move ({mv.start_x:.2f},{mv.start_y:.2f}) -> ({mv.end_x:.2f},{mv.end_y:.2f}) mm "
+                                f"violates usable area soft stop X[{self.machine.usable_min_x:.1f}..{self.machine.usable_max_x:.1f}], "
                                 f"Y[{self.machine.usable_min_y:.1f}..{self.machine.usable_max_y:.1f}] mm."
                             ),
                             line_number=mv.gcode_line_number,

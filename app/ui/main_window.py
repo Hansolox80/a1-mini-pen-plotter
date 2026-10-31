@@ -774,9 +774,41 @@ class MainWindow(QMainWindow):
             act = self.recent_menu.addAction(r_path)
             act.triggered.connect(lambda checked=False, p=r_path: self._load_project_from_path(p))
 
+    def _check_calibration_before_export(self) -> bool:
+        """Enforces Requirement 7: Block direct executable export if pen profile is uncalibrated."""
+        if not self.project.pen_profile.is_calibrated and not self.project.air_draw_mode:
+            box = QMessageBox(self)
+            box.setIcon(QMessageBox.Icon.Warning)
+            box.setWindowTitle("Export Blocked — Uncalibrated Pen Profile")
+            box.setText(
+                f"Pen profile '{self.project.pen_profile.name}' uses unverified default Z heights.\n\n"
+                f"Current values (Drawing Z = {self.project.pen_profile.drawing_z_mm:.2f} mm, "
+                f"Pen-Up Z = {self.project.pen_profile.pen_up_z_mm:.2f} mm) are theoretical presumptions "
+                "and have NOT been physically calibrated on your Bambu Lab A1 Mini.\n\n"
+                "Plotting with unverified Z risks driving the toolhead into the bed or crushing the pen tip.\n\n"
+                "Please run the Pen Calibration Wizard to find real physical contact, "
+                "or enable Air Draw Mode (+15 mm) to safely dry-run in the air."
+            )
+            btn_wizard = box.addButton("Launch Calibration Wizard...", QMessageBox.ButtonRole.ActionRole)
+            btn_air = box.addButton("Enable Air Draw Mode (+15 mm)", QMessageBox.ButtonRole.ActionRole)
+            btn_cancel = box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+            box.exec()
+
+            if box.clickedButton() == btn_wizard:
+                self.action_open_calibration_wizard()
+            elif box.clickedButton() == btn_air:
+                self.project.air_draw_mode = True
+                self.left_sidebar.chk_air_draw.setChecked(True)
+                self.recompute_pipeline()
+            return False
+        return True
+
     def action_export_gcode(self) -> None:
         if not self.project.toolpath_moves:
             QMessageBox.warning(self, "Nothing to Export", "Load an SVG drawing to generate toolpaths before exporting.")
+            return
+
+        if not self._check_calibration_before_export():
             return
 
         if not self.current_validation.can_export_executable:
@@ -823,6 +855,9 @@ class MainWindow(QMainWindow):
     def action_export_3mf(self) -> None:
         if not self.project.toolpath_moves:
             QMessageBox.warning(self, "Nothing to Export", "Load an SVG drawing before exporting a .gcode.3mf package.")
+            return
+
+        if not self._check_calibration_before_export():
             return
 
         if not self.current_validation.can_export_executable:

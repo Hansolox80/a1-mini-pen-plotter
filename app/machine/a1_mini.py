@@ -62,10 +62,10 @@ class MachineProfile:
     nominal_y_mm: float = 180.0
     nominal_z_mm: float = 180.0
     # Safety margins restricting usable plotting area (mm from build plate edges)
-    margin_left_mm: float = 10.0
-    margin_right_mm: float = 10.0
-    margin_front_mm: float = 10.0
-    margin_back_mm: float = 10.0
+    margin_left_mm: float = 15.0
+    margin_right_mm: float = 15.0
+    margin_front_mm: float = 15.0
+    margin_back_mm: float = 15.0
     # Origin & global coordinate offsets
     origin_position: str = "front_left"  # "front_left", "center", "back_left"
     coord_offset_x_mm: float = 0.0
@@ -154,10 +154,10 @@ class MachineProfile:
             nominal_x_mm=float(data.get("nominal_x_mm", 180.0)),
             nominal_y_mm=float(data.get("nominal_y_mm", 180.0)),
             nominal_z_mm=float(data.get("nominal_z_mm", 180.0)),
-            margin_left_mm=float(data.get("margin_left_mm", 10.0)),
-            margin_right_mm=float(data.get("margin_right_mm", 10.0)),
-            margin_front_mm=float(data.get("margin_front_mm", 10.0)),
-            margin_back_mm=float(data.get("margin_back_mm", 10.0)),
+            margin_left_mm=float(data.get("margin_left_mm", 15.0)),
+            margin_right_mm=float(data.get("margin_right_mm", 15.0)),
+            margin_front_mm=float(data.get("margin_front_mm", 15.0)),
+            margin_back_mm=float(data.get("margin_back_mm", 15.0)),
             origin_position=str(data.get("origin_position", "front_left")),
             coord_offset_x_mm=float(data.get("coord_offset_x_mm", 0.0)),
             coord_offset_y_mm=float(data.get("coord_offset_y_mm", 0.0)),

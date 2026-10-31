@@ -876,7 +876,11 @@ class BuildPlateCanvas(QWidget):
             self.update()
             return
 
-        self.update()
+        # Only invalidate the thin ruler strips for the cursor tick marks
+        # Avoid full plate repaint to maintain 60+ FPS during mouse movement
+        rt = self.RULER_THICKNESS
+        self.update(0, 0, self.width(), rt)
+        self.update(0, 0, rt, self.height())
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         if self._is_panning:

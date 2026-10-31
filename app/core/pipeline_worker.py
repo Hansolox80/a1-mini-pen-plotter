@@ -137,7 +137,7 @@ class PipelineWorker(QRunnable):
                 return
 
             # 4. Mandatory Safety Validation
-            validator = SafetyValidator(machine=self.machine, pen=self.pen)
+            validator = SafetyValidator(machine=self.machine, pen=self.pen, air_draw_mode=self.air_draw_mode)
             validation = validator.validate(moves, gcode)
 
             if self._is_cancelled:

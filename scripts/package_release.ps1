@@ -15,7 +15,7 @@ if (-not (Test-Path $ExePath)) {
     exit 1
 }
 
-$ZipName = "A1-Mini-Pen-Plotter-v1.10.1-windows-x64.zip"
+$ZipName = "A1-Mini-Pen-Plotter-v1.10.2-windows-x64.zip"
 $ZipPath = Join-Path $DistDir $ZipName
 
 if (Test-Path $ZipPath) {

@@ -123,6 +123,7 @@ class GcodeGenerator:
         # 4. Toolpath Body
         lines.append("; --- TOOLPATH MOVEMENTS ---")
         current_path_idx = -1
+        current_z = safe_z
 
         for mv in moves:
             if mv.path_index != current_path_idx:
@@ -133,10 +134,13 @@ class GcodeGenerator:
             clamped_z = max(0.0, float(mv.end_z)) if math.isfinite(mv.end_z) else 0.0
 
             if mv.move_type == MovementType.TRAVEL:
-                cmd_str = (
-                    f"G0 X{mv.end_x:.3f} Y{mv.end_y:.3f} Z{clamped_z:.3f} "
-                    f"F{feed:.0f} ; Travel (Pen Up)"
-                )
+                # STRICT SAFETY RULE: Ensure pen is lifted vertically BEFORE any XY lateral movement!
+                if current_z < clamped_z - 1e-4:
+                    lift_cmd = f"G0 Z{clamped_z:.3f} F{z_feed:.0f} ; Pure vertical lift before XY travel"
+                    lines.append(lift_cmd)
+                    current_z = clamped_z
+
+                cmd_str = f"G0 X{mv.end_x:.3f} Y{mv.end_y:.3f} F{feed:.0f} ; Rapid travel XY (Pen Up)"
                 lines.append(cmd_str)
                 mv.gcode_line_number = len(lines)
                 mv.gcode_command = cmd_str
@@ -145,6 +149,7 @@ class GcodeGenerator:
                 lines.append("G90 ; Reassert absolute coordinates for controlled descent")
                 cmd_str = f"G1 Z{clamped_z:.3f} F{feed:.0f} ; Pen Down (Contact Z)"
                 lines.append(cmd_str)
+                current_z = clamped_z
                 mv.gcode_line_number = len(lines)
                 mv.gcode_command = cmd_str
                 if mv.dwell_ms > 0:
@@ -163,6 +168,7 @@ class GcodeGenerator:
                 lines.append("G90 ; Reassert absolute coordinates for safe lift")
                 cmd_str = f"G0 Z{clamped_z:.3f} F{feed:.0f} ; Pen Up (Lift Z)"
                 lines.append(cmd_str)
+                current_z = clamped_z
                 mv.gcode_line_number = len(lines)
                 mv.gcode_command = cmd_str
 

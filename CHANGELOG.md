@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.10.2] - 2026-10-30
+
+### Fixed & Performance
+- **Zero-Lag SVG Hover**: Decoupled canvas cursor hover events from full plate trajectory repainting; isolated ruler invalidation to maintain 60+ FPS at all times.
+- **Optimized Element Tree**: High-element SVGs (>250 elements) now load instantly with suspended UI layout updates and selective layer expansion.
+
+### Security & Mechanical Safety
+- **Physical Calibration Enforcement**: Default profiles are treated strictly as unverified theoretical presumptions (`is_calibrated = False`). Direct executable G-code and 3MF exports are blocked unless physically calibrated or in Air Draw Mode.
+- **Interactive Export Protection**: Attempting to export an uncalibrated profile displays an interactive modal dialog allowing one-click launch of the Calibration Wizard or instant fallback to Air Draw Mode (+15 mm).
+- **Decoupled Movement Sequence (Vertical Z-First)**: Eliminated simultaneous 3D diagonal travel moves. Strict vertical pen lift (`G0 Z...`) is guaranteed before ANY lateral XY displacement (`G0 X... Y...`), eliminating paper scratching risks.
+- **Preserved G28 Homing**: Maintained `G28` in A1 Mini startup G-code followed immediately by pure vertical Z raise to `safe_z`.
+- **Expanded Safety Margins**: Increased default margins to 15.0 mm (150×150 mm usable area) with dual start/end boundary validation.
+
+### UI & UX
+- **Dynamic Calibration Badges**: Real-time visual status badges in the Pen tab (`✅ PHYSICALLY CALIBRATED` vs `⚠️ NOT CALIBRATED`) and `[Calibrated]` dropdown indicators.
+- **Enhanced 6-Step Calibration Wizard**: Rich, step-by-step guidance for the paper-slide touch-off method, touchscreen Z jog, ΔZ clearance calculation, and isolated test square G-code.
+
 ## [1.10.1] - 2026-10-30
 
 ### Added

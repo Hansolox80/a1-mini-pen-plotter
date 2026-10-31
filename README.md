@@ -4,7 +4,7 @@
 
 **Dedicated SVG-to-G-code Preparation Studio for the Bambu Lab A1 Mini**
 
-[![Release v1.10.1](https://img.shields.io/badge/release-v1.10.1-blue.svg?logo=github&logoColor=white)](https://github.com/Hansolox80/a1-mini-pen-plotter/releases/tag/v1.10.1)
+[![Release v1.10.2](https://img.shields.io/badge/release-v1.10.2-blue.svg?logo=github&logoColor=white)](https://github.com/Hansolox80/a1-mini-pen-plotter/releases/tag/v1.10.2)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%20%7C%203.13%20%7C%203.15-blue.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![PySide6](https://img.shields.io/badge/GUI-PySide6%20Qt6-brightgreen.svg?logo=qt&logoColor=white)](https://doc.qt.io/qtforpython-6/)
 [![Platform Multi](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-0078D6.svg?logo=linux&logoColor=white)](https://github.com/Hansolox80/a1-mini-pen-plotter/releases)
@@ -155,14 +155,14 @@ Before any execution-ready file can be exported, the mandatory validation engine
 No Python installation required.
 
 * **Windows (x64)**:
-  1. Download `A1-Mini-Pen-Plotter-v1.10.1-windows-x64.zip` from the [Releases](https://github.com/Hansolox80/a1-mini-pen-plotter/releases) page.
+  1. Download `A1-Mini-Pen-Plotter-v1.10.2-windows-x64.zip` from the [Releases](https://github.com/Hansolox80/a1-mini-pen-plotter/releases) page.
   2. Extract the archive and double-click **`A1 Mini Pen Plotter.exe`**.
   3. *(Optional)* Run `scripts\install_windows.ps1` to create Desktop & Start Menu shortcuts.
 * **Linux (x64)**:
-  1. Download `A1-Mini-Pen-Plotter-v1.10.1-linux-x64.tar.gz` from [Releases](https://github.com/Hansolox80/a1-mini-pen-plotter/releases).
+  1. Download `A1-Mini-Pen-Plotter-v1.10.2-linux-x64.tar.gz` from [Releases](https://github.com/Hansolox80/a1-mini-pen-plotter/releases).
   2. Extract and run `./A1\ Mini\ Pen\ Plotter/A1\ Mini\ Pen\ Plotter`.
 * **macOS (Apple Silicon & Intel)**:
-  1. Download `A1-Mini-Pen-Plotter-v1.10.1-macos.dmg` from [Releases](https://github.com/Hansolox80/a1-mini-pen-plotter/releases).
+  1. Download `A1-Mini-Pen-Plotter-v1.10.2-macos.dmg` from [Releases](https://github.com/Hansolox80/a1-mini-pen-plotter/releases).
   2. Drag **`A1 Mini Pen Plotter.app`** to your Applications folder.
 
 ### Option B: Running from Source (Python 3.12+)
@@ -251,7 +251,7 @@ To generate a release `.zip` with SHA-256 and MD5 checksums ready for GitHub Rel
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\package_release.ps1
 ```
-Output: `dist\A1-Mini-Pen-Plotter-v1.10.1-windows-x64.zip`.
+Output: `dist\A1-Mini-Pen-Plotter-v1.10.2-windows-x64.zip`.
 
 ---
 

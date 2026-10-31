@@ -332,6 +332,7 @@ def test_simulator_playback_scrubbing_and_state_consistency():
     """
     machine = create_default_a1_mini_profile()
     pen = create_default_pen_profiles()[0]
+    pen.is_calibrated = True  # Calibrated for valid 3MF package verification
     parser = SvgParser()
     doc = parser.parse_file(str(EXAMPLES_DIR / "01_square_20x20mm.svg"))
     tp_gen = ToolpathGenerator(machine=machine, pen=pen)
@@ -387,6 +388,7 @@ def test_bambu_3mf_deep_container_verification(tmp_path):
     """
     machine = create_default_a1_mini_profile()
     pen = create_default_pen_profiles()[0]
+    pen.is_calibrated = True  # Calibrated for valid 3MF package verification
     parser = SvgParser()
     doc = parser.parse_file(str(EXAMPLES_DIR / "01_square_20x20mm.svg"))
     tp_gen = ToolpathGenerator(machine=machine, pen=pen)
@@ -539,3 +541,49 @@ def test_repetitive_pipeline_stability_endurance(qapp):
             assert win.project.svg_document is None
 
     win.close()
+
+
+# ==============================================================================
+# 8. Uncalibrated Default Pen Blocking & Air Draw Dry Run Verification
+# ==============================================================================
+
+def test_uncalibrated_pen_blocks_export_and_air_draw_allows_dry_run(tmp_path):
+    """Verifies Requirements 1, 3 & 7:
+    - Default profiles are uncalibrated presumptions and block direct executable G-code and 3MF export.
+    - Air Draw Mode safely allows dry-running in the air.
+    - Calibrating the profile allows full execution export.
+    """
+    machine = create_default_a1_mini_profile()
+    pen = create_default_pen_profiles()[0]
+    assert not pen.is_calibrated
+
+    parser = SvgParser()
+    doc = parser.parse_file(str(EXAMPLES_DIR / "01_square_20x20mm.svg"))
+    tp_gen = ToolpathGenerator(machine=machine, pen=pen)
+    moves, stats = tp_gen.generate(doc, DocumentTransform(pos_x_mm=50.0, pos_y_mm=50.0))
+    gcode = GcodeGenerator(machine=machine, pen=pen).generate(moves, stats)
+
+    # 1. Direct export MUST be blocked with SafetyExportBlockedError
+    import pytest
+    from app.export.gcode_exporter import SafetyExportBlockedError
+    with pytest.raises(SafetyExportBlockedError) as exc_info:
+        GcodeExporter.export_gcode_file(tmp_path / "blocked.gcode", moves, gcode, machine, pen)
+    assert "UNCALIBRATED_PEN_PROFILE" in str(exc_info.value)
+
+    with pytest.raises(SafetyExportBlockedError) as exc_info_3mf:
+        GcodeExporter.export_bambu_3mf_file(tmp_path / "blocked.gcode.3mf", moves, gcode, stats, machine, pen)
+    assert "UNCALIBRATED_PEN_PROFILE" in str(exc_info_3mf.value)
+
+    # 2. Air Draw Mode allows dry run
+    tp_gen_air = ToolpathGenerator(machine=machine, pen=pen, air_draw_mode=True, air_draw_offset_z_mm=15.0)
+    moves_air, stats_air = tp_gen_air.generate(doc, DocumentTransform(pos_x_mm=50.0, pos_y_mm=50.0))
+    gcode_air = GcodeGenerator(machine=machine, pen=pen).generate(moves_air, stats_air)
+    rep_air = SafetyValidator(machine=machine, pen=pen, air_draw_mode=True).validate(moves_air, gcode_air)
+    assert rep_air.can_export_executable
+    assert any(i.code == "AIR_DRAW_UNCALIBRATED" for i in rep_air.issues)
+
+    # 3. Marking profile as calibrated allows full export
+    pen.is_calibrated = True
+    rep_cal = GcodeExporter.export_gcode_file(tmp_path / "calibrated.gcode", moves, gcode, machine, pen)
+    assert rep_cal.can_export_executable
+    assert (tmp_path / "calibrated.gcode").exists()
