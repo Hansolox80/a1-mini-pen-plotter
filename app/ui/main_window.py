@@ -48,6 +48,7 @@ from app.machine.profiles import PenProfile, ProfileManager
 from app.machine.safety import SafetyValidationReport, SafetyValidator, ValidationSeverity
 from app.ui.canvas import BuildPlateCanvas
 from app.ui.dialogs.calibration_wizard import PenCalibrationWizard
+from app.ui.dialogs.resize_dialog import ResizeDrawingDialog
 from app.ui.dialogs.settings_dialog import AppSettings, SettingsDialog, SettingsManager
 from app.ui.dialogs.validation_dialog import ValidationAndGcodeDialog
 from app.ui.icons import make_icon
@@ -189,6 +190,28 @@ class MainWindow(QMainWindow):
         act_redo = self.undo_stack.createRedoAction(self, "Redo")
         act_redo.setShortcut(QKeySequence.StandardKey.Redo)
         edit_menu.addAction(act_redo)
+
+        edit_menu.addSeparator()
+        act_center = QAction("Center on Plate", self)
+        act_center.setToolTip("Center drawing on the 180×180 mm build plate")
+        act_center.triggered.connect(self.action_center_on_plate)
+        edit_menu.addAction(act_center)
+
+        act_origin = QAction("Align to Safe Origin", self)
+        act_origin.setToolTip("Align drawing to bottom-left safe area origin (15, 15 mm)")
+        act_origin.triggered.connect(self.action_align_safe_origin)
+        edit_menu.addAction(act_origin)
+
+        act_fit_safe = QAction("Fit to Safe Area", self)
+        act_fit_safe.setToolTip("Scale and center drawing to fit inside safe margins (150×150 mm)")
+        act_fit_safe.triggered.connect(self.action_fit_to_safe_area)
+        edit_menu.addAction(act_fit_safe)
+
+        act_resize = QAction(make_icon("resize", size=14), "Resize Drawing...", self)
+        act_resize.setShortcut(QKeySequence("Ctrl+R"))
+        act_resize.setToolTip("Open comprehensive drawing resize & scaling dialog [Ctrl+R]")
+        act_resize.triggered.connect(self.action_open_resize_dialog)
+        edit_menu.addAction(act_resize)
 
         edit_menu.addSeparator()
         act_settings = QAction("Settings...", self)
@@ -407,6 +430,7 @@ class MainWindow(QMainWindow):
         self.right_inspector.center_on_plate_requested.connect(self.action_center_on_plate)
         self.right_inspector.align_origin_requested.connect(self.action_align_safe_origin)
         self.right_inspector.fit_to_safe_area_requested.connect(self.action_fit_to_safe_area)
+        self.right_inspector.resize_requested.connect(self.action_open_resize_dialog)
         self.right_inspector.fill_settings_changed.connect(self._on_fill_settings_changed)
         self.right_inspector.optimization_settings_changed.connect(self._on_optimization_settings_changed)
         self.right_inspector.coordinate_flags_changed.connect(self._on_coordinate_flags_changed)
@@ -651,6 +675,40 @@ class MainWindow(QMainWindow):
         new_t.pos_x_mm = round(m.usable_min_x + (m.usable_width_mm - new_w) * 0.5, 2)
         new_t.pos_y_mm = round(m.usable_min_y + (m.usable_height_mm - new_h) * 0.5, 2)
         self._on_inspector_transform_changed(new_t)
+
+    def action_open_resize_dialog(self) -> None:
+        doc = self.project.svg_document
+        if doc is None or not self.current_drawing_bounds.is_valid:
+            QMessageBox.information(
+                self,
+                "No Drawing Loaded",
+                "Please open or import an SVG drawing before resizing.",
+            )
+            return
+
+        nb = doc.compute_native_bounds()
+        if nb.width <= 1e-4 or nb.height <= 1e-4:
+            QMessageBox.warning(
+                self,
+                "Invalid Bounds",
+                "The current drawing has zero or invalid dimensions and cannot be resized.",
+            )
+            return
+
+        dlg = ResizeDrawingDialog(
+            current_bounds=self.current_drawing_bounds,
+            native_bounds=nb,
+            current_transform=self.project.doc_transform,
+            machine=self.project.machine_profile,
+            parent=self,
+        )
+        if dlg.exec():
+            new_t = dlg.result_transform()
+            self._on_inspector_transform_changed(new_t)
+            self.statusBar().showMessage(
+                f"Resized drawing to {dlg.target_width:.1f} × {dlg.target_height:.1f} mm",
+                4000,
+            )
 
     def _on_element_visibility_changed(self) -> None:
         self.left_sidebar.sync_visibility_to_document(self.project.svg_document)

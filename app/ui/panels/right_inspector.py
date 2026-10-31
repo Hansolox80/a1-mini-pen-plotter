@@ -11,8 +11,10 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QFormLayout,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
+    QMenu,
     QPushButton,
     QScrollArea,
     QVBoxLayout,
@@ -27,6 +29,7 @@ from app.core.models import (
     ToolpathStats,
 )
 from app.machine.profiles import PenProfile
+from app.ui.icons import make_icon
 
 
 class RightInspectorPanel(QFrame):
@@ -36,6 +39,7 @@ class RightInspectorPanel(QFrame):
     center_on_plate_requested = Signal()
     fit_to_safe_area_requested = Signal()
     align_origin_requested = Signal()
+    resize_requested = Signal()
     fill_settings_changed = Signal(FillSettings)
     optimization_settings_changed = Signal(OptimizationSettings)
     coordinate_flags_changed = Signal(bool, bool)  # (invert_y, normalize_origin)
@@ -112,22 +116,37 @@ class RightInspectorPanel(QFrame):
         form.addRow("Height (H):", self.spn_height)
         layout.addLayout(form)
 
-        row_align = QHBoxLayout()
+        grid_align = QGridLayout()
+        grid_align.setSpacing(5)
+
         btn_center = QPushButton("Center Plate", card)
         btn_center.setToolTip("Center drawing on the 180×180 mm build plate")
         btn_center.clicked.connect(self.center_on_plate_requested.emit)
-        row_align.addWidget(btn_center)
+        grid_align.addWidget(btn_center, 0, 0)
 
         btn_origin = QPushButton("Safe Origin", card)
-        btn_origin.setToolTip("Align drawing bottom-left to the safe area origin")
+        btn_origin.setToolTip("Align drawing bottom-left to the safe area origin (15, 15 mm)")
         btn_origin.clicked.connect(self.align_origin_requested.emit)
-        row_align.addWidget(btn_origin)
+        grid_align.addWidget(btn_origin, 0, 1)
 
         btn_fit_safe = QPushButton("Fit Safe", card)
-        btn_fit_safe.setToolTip("Scale and center drawing to fit inside the safe margin area")
+        btn_fit_safe.setToolTip("Scale and center drawing to fit inside the safe margin area (150×150 mm)")
         btn_fit_safe.clicked.connect(self.fit_to_safe_area_requested.emit)
-        row_align.addWidget(btn_fit_safe)
-        layout.addLayout(row_align)
+        grid_align.addWidget(btn_fit_safe, 1, 0)
+
+        self.btn_resize = QPushButton("Resize...", card)
+        self.btn_resize.setIcon(make_icon("resize", "#38BDF8", 14))
+        self.btn_resize.setToolTip(
+            "Open comprehensive drawing resize dialog (dimensions, percentage, presets) [Ctrl+R]"
+        )
+        self.btn_resize.setStyleSheet(
+            "QPushButton { font-weight: 600; color: #38BDF8; border: 1px solid #0369A1; } "
+            "QPushButton:hover { background-color: #0C4A6E; color: #7DD3FC; border-color: #38BDF8; }"
+        )
+        self.btn_resize.clicked.connect(self.resize_requested.emit)
+        grid_align.addWidget(self.btn_resize, 1, 1)
+
+        layout.addLayout(grid_align)
 
         self.spn_pos_x.valueChanged.connect(self._on_transform_spin_changed)
         self.spn_pos_y.valueChanged.connect(self._on_transform_spin_changed)

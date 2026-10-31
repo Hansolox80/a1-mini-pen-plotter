@@ -15,7 +15,10 @@ if (-not (Test-Path $ExePath)) {
     exit 1
 }
 
-$ZipName = "A1-Mini-Pen-Plotter-v1.10.2-windows-x64.zip"
+$VersionMatch = Select-String -Path (Join-Path $ProjectRoot "app\__init__.py") -Pattern '__version__\s*=\s*["'']([^"'']+)["'']'
+$AppVersion = if ($VersionMatch -and $VersionMatch.Matches.Groups.Count -gt 1) { $VersionMatch.Matches.Groups[1].Value } else { "2.10.2" }
+
+$ZipName = "A1-Mini-Pen-Plotter-v$AppVersion-windows-x64.zip"
 $ZipPath = Join-Path $DistDir $ZipName
 
 if (Test-Path $ZipPath) {

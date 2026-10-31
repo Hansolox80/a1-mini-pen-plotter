@@ -11,6 +11,7 @@ from PySide6.QtWidgets import QApplication
 
 from app.core.models import DocumentTransform, FillSettings, OptimizationSettings, WorkflowMode
 from app.ui.dialogs.calibration_wizard import PenCalibrationWizard
+from app.ui.dialogs.resize_dialog import ResizeDrawingDialog
 from app.ui.dialogs.settings_dialog import SettingsDialog
 from app.ui.dialogs.validation_dialog import ValidationAndGcodeDialog
 from app.ui.main_window import MainWindow
@@ -107,6 +108,34 @@ def test_dialogs_instantiation_and_logic(qapp):
     set_dlg._on_save()
     assert set_dlg.settings.theme == "slate_engineering"
     set_dlg.close()
+
+    # 4. Resize & Framing Dialog
+    nb = win.project.svg_document.compute_native_bounds()
+    resize_dlg = ResizeDrawingDialog(
+        current_bounds=win.current_drawing_bounds,
+        native_bounds=nb,
+        current_transform=win.project.doc_transform,
+        machine=win.project.machine_profile,
+        parent=win,
+    )
+    assert resize_dlg.tabs.count() == 3
+
+    # Tab 1: Dimensions mode
+    resize_dlg.spn_width.setValue(76.0)
+    assert abs(resize_dlg.spn_width.value() - 76.0) < 1e-2
+    assert resize_dlg.target_width == 76.0
+
+    # Tab 2: Percentage mode
+    resize_dlg.spn_pct_uniform.setValue(150.0)
+    assert abs(resize_dlg.spn_pct_uniform.value() - 150.0) < 1e-2
+
+    # Tab 3: Presets mode
+    resize_dlg._on_preset_selected(0)  # Safe Area 150x150
+    res_t = resize_dlg.result_transform()
+    assert res_t is not None
+    assert res_t.scale_x > 0
+    assert res_t.scale_y > 0
+    resize_dlg.close()
 
     win.close()
 
