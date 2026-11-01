@@ -1,8 +1,8 @@
 # UTF-8
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(1, 10, 1, 0),
-    prodvers=(1, 10, 1, 0),
+    filevers=(3, 10, 2, 0),
+    prodvers=(3, 10, 2, 0),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -17,12 +17,12 @@ VSVersionInfo(
         '040904B0',
         [StringStruct('CompanyName', 'A1 Mini Pen Plotter Engineering'),
         StringStruct('FileDescription', 'A1 Mini Pen Plotter - SVG to G-Code Desktop Studio'),
-        StringStruct('FileVersion', '1.10.2.0'),
+        StringStruct('FileVersion', '3.10.2.0'),
         StringStruct('InternalName', 'A1 Mini Pen Plotter'),
         StringStruct('LegalCopyright', 'Copyright (c) 2026 A1 Mini Pen Plotter Engineering'),
         StringStruct('OriginalFilename', 'A1 Mini Pen Plotter.exe'),
         StringStruct('ProductName', 'A1 Mini Pen Plotter'),
-        StringStruct('ProductVersion', '1.10.2.0')])
+        StringStruct('ProductVersion', '3.10.2.0')])
       ]),
     VarFileInfo([VarStruct('Translation', [1033, 1200])])
   ]

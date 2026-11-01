@@ -1,5 +1,5 @@
 """A1 Mini Pen Plotter — Native Desktop SVG-to-G-Code Preparation Application."""
 
-__version__ = "2.10.2"
+__version__ = "3.10.2"
 __app_name__ = "A1 Mini Pen Plotter"
 __author__ = "A1 Mini Pen Plotter Engineering"
