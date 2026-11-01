@@ -640,9 +640,12 @@ class LeftSidebar(QFrame):
 
         if len(doc.elements) <= 250:
             self.tree_elements.expandAll()
-        else:
+        elif len(doc.elements) <= 500:
             for l_item in layers_map.values():
                 l_item.setExpanded(True)
+        else:
+            for l_item in layers_map.values():
+                l_item.setExpanded(False)
         self.tree_elements.setUpdatesEnabled(True)
 
         if not doc.warnings:

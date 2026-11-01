@@ -36,6 +36,8 @@ class SimulatorControlBar(QFrame):
         self.simulator = ToolpathSimulator()
         self._sim_active = False
         self._updating_slider = False
+        self._last_pen_down: Optional[bool] = None
+        self._last_is_playing: Optional[bool] = None
 
         self.timer = QTimer(self)
         self.timer.setInterval(33)  # ~30 FPS animation
@@ -214,29 +216,33 @@ class SimulatorControlBar(QFrame):
 
     def _sync_ui_from_state(self) -> None:
         st = self.simulator.state
-        if st.is_playing:
-            self.btn_play_pause.setText("Pause")
-            self.btn_play_pause.setIcon(make_icon("pause", "#09110B", size=14))
-        else:
-            self.btn_play_pause.setText("Simulate")
-            self.btn_play_pause.setIcon(make_icon("play", "#09110B", size=14))
+        if self._last_is_playing != st.is_playing:
+            self._last_is_playing = st.is_playing
+            if st.is_playing:
+                self.btn_play_pause.setText("Pause")
+                self.btn_play_pause.setIcon(make_icon("pause", "#09110B", size=14))
+            else:
+                self.btn_play_pause.setText("Simulate")
+                self.btn_play_pause.setIcon(make_icon("play", "#09110B", size=14))
 
         self._updating_slider = True
         self.slider_progress.setValue(st.current_move_index)
         self._updating_slider = False
 
-        if st.is_pen_down:
-            self.lbl_pen_state.setText("PEN DOWN (DRAW)")
-            self.lbl_pen_state.setStyleSheet(
-                "background-color: rgba(34, 197, 94, 0.22); color: #4ADE80; "
-                "border: 1px solid #22C55E; border-radius: 3px; padding: 1px 8px; font-weight: 700;"
-            )
-        else:
-            self.lbl_pen_state.setText("PEN UP (TRAVEL)")
-            self.lbl_pen_state.setStyleSheet(
-                "background-color: rgba(56, 189, 248, 0.16); color: #38BDF8; "
-                "border: 1px solid rgba(56, 189, 248, 0.4); border-radius: 3px; padding: 1px 8px; font-weight: 700;"
-            )
+        if self._last_pen_down != st.is_pen_down:
+            self._last_pen_down = st.is_pen_down
+            if st.is_pen_down:
+                self.lbl_pen_state.setText("PEN DOWN (DRAW)")
+                self.lbl_pen_state.setStyleSheet(
+                    "background-color: rgba(34, 197, 94, 0.22); color: #4ADE80; "
+                    "border: 1px solid #22C55E; border-radius: 3px; padding: 1px 8px; font-weight: 700;"
+                )
+            else:
+                self.lbl_pen_state.setText("PEN UP (TRAVEL)")
+                self.lbl_pen_state.setStyleSheet(
+                    "background-color: rgba(56, 189, 248, 0.16); color: #38BDF8; "
+                    "border: 1px solid rgba(56, 189, 248, 0.4); border-radius: 3px; padding: 1px 8px; font-weight: 700;"
+                )
 
         self.lbl_xyz.setText(f"X: {st.x:6.2f} mm   Y: {st.y:6.2f} mm   Z: {st.z:6.2f} mm")
 
