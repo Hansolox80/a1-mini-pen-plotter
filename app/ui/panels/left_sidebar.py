@@ -85,7 +85,9 @@ class LeftSidebar(QFrame):
 
         layout.addWidget(self.tabs)
 
-        self.refresh_profiles_ui()
+        default_machine_id = self.profile_manager.get_default_machine().id
+        default_pen_id = self.profile_manager.get_default_pen().id
+        self.refresh_profiles_ui(select_machine_id=default_machine_id, select_pen_id=default_pen_id)
 
     # ==========================================================================
     # Tab 1: Project, SVG Elements & Layers
@@ -286,7 +288,7 @@ class LeftSidebar(QFrame):
         self.spn_holder_off_x = self._make_dspin(-80.0, 80.0, 0.0, " mm")
         self.spn_holder_off_y = self._make_dspin(-80.0, 80.0, -22.0, " mm")
         self.spn_safe_z = self._make_dspin(2.0, 175.0, 22.0, " mm")
-        self.spn_min_safe_z = self._make_dspin(0.5, 50.0, 2.0, " mm")
+        self.spn_min_safe_z = self._make_dspin(0.5, 50.0, 0.5, " mm")
         self.spn_max_travel = self._make_dspin(10.0, 500.0, 200.0, " mm/s")
         self.spn_max_draw = self._make_dspin(5.0, 300.0, 80.0, " mm/s")
 
@@ -730,8 +732,9 @@ class LeftSidebar(QFrame):
         for p_id, p_prof in self.profile_manager.pens.items():
             cal_tag = " [Calibrated]" if p_prof.is_calibrated else " [Uncalibrated]"
             self.cmb_pen.addItem(f"{p_prof.name}{cal_tag}", p_id)
-        if select_pen_id:
-            idx = self.cmb_pen.findData(select_pen_id)
+        target_pen_id = select_pen_id or self.profile_manager.get_default_pen().id
+        if target_pen_id:
+            idx = self.cmb_pen.findData(target_pen_id)
             if idx >= 0:
                 self.cmb_pen.setCurrentIndex(idx)
 

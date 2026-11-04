@@ -123,8 +123,8 @@ if is_macos:
         icon=icon_file,
         bundle_identifier="com.a1mini.penplotter",
         info_plist={
-            "CFBundleShortVersionString": "3.10.2",
-            "CFBundleVersion": "3.10.2",
+            "CFBundleShortVersionString": "3.11.2",
+            "CFBundleVersion": "3.11.2",
             "NSHighResolutionCapable": "True",
             "LSMinimumSystemVersion": "10.15",
         },

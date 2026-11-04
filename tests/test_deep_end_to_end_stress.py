@@ -99,22 +99,19 @@ def test_exhaustive_all_examples_pipeline_and_exports(tmp_path):
             doc_prec = SvgParser(curve_precision_mm=prec).parse_file(str(svg_file))
             assert len(doc_prec.elements) == len(doc.elements)
 
-        # Center on plate
+        # Fit and center within effective usable area of the machine
         bounds = doc.compute_native_bounds()
+        avail_w = max(10.0, machine.effective_usable_width_mm - 4.0)
+        avail_h = max(10.0, machine.effective_usable_height_mm - 4.0)
+        s = min(1.0, avail_w / max(bounds.width, 1.0), avail_h / max(bounds.height, 1.0))
+        new_w = bounds.width * s
+        new_h = bounds.height * s
         transform = DocumentTransform(
-            pos_x_mm=max(15.0, (180.0 - bounds.width) * 0.5),
-            pos_y_mm=max(15.0, (180.0 - bounds.height) * 0.5),
-            scale_x=1.0,
-            scale_y=1.0,
+            pos_x_mm=machine.effective_usable_min_x + (machine.effective_usable_width_mm - new_w) * 0.5,
+            pos_y_mm=machine.effective_usable_min_y + (machine.effective_usable_height_mm - new_h) * 0.5,
+            scale_x=s,
+            scale_y=s,
         )
-
-        # Scale down if it exceeds usable area
-        if bounds.width > 150.0 or bounds.height > 150.0:
-            s = min(140.0 / max(bounds.width, 1.0), 140.0 / max(bounds.height, 1.0))
-            transform.scale_x = s
-            transform.scale_y = s
-            transform.pos_x_mm = (180.0 - bounds.width * s) * 0.5
-            transform.pos_y_mm = (180.0 - bounds.height * s) * 0.5
 
         # Test across workflows: A1 Mini SD Direct, Bambu Studio 3MF, and Standard G-Code
         for wf_mode in (WorkflowMode.BAMBU_SD_DIRECT, WorkflowMode.BAMBU_STUDIO_3MF, WorkflowMode.STANDARD_GCODE):

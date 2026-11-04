@@ -4,11 +4,11 @@
 
 **Dedicated SVG-to-G-code Preparation Studio for the Bambu Lab A1 Mini**
 
-[![Release v1.10.2](https://img.shields.io/badge/release-v1.10.2-blue.svg?logo=github&logoColor=white)](https://github.com/Hansolox80/a1-mini-pen-plotter/releases/tag/v1.10.2)
+[![Release v3.11.2](https://img.shields.io/badge/release-v3.11.2-blue.svg?logo=github&logoColor=white)](https://github.com/Hansolox80/a1-mini-pen-plotter/releases/tag/v3.11.2)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%20%7C%203.13%20%7C%203.15-blue.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![PySide6](https://img.shields.io/badge/GUI-PySide6%20Qt6-brightgreen.svg?logo=qt&logoColor=white)](https://doc.qt.io/qtforpython-6/)
 [![Platform Multi](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-0078D6.svg?logo=linux&logoColor=white)](https://github.com/Hansolox80/a1-mini-pen-plotter/releases)
-[![Tests Passing](https://img.shields.io/badge/tests-50%20passed-22c55e.svg?logo=pytest&logoColor=white)](tests/)
+[![Tests Passing](https://img.shields.io/badge/tests-56%20passed-22c55e.svg?logo=pytest&logoColor=white)](tests/)
 [![License MIT](https://img.shields.io/badge/license-MIT-purple.svg)](LICENSE)
 [![Machine Bambu Lab A1 Mini](https://img.shields.io/badge/hardware-Bambu%20Lab%20A1%20Mini%20(180%C3%97180mm)-green.svg)](https://bambulab.com/en/a1-mini)
 
@@ -19,6 +19,24 @@
 ![A1 Mini Pen Plotter Main Workspace](docs/screenshots/main_workspace.png)
 
 </div>
+
+---
+
+## What's New in Release v3.11.2
+
+- **Centering & Coordinate System Realignment (Zero Y-Offset Drift)**:
+  - Eliminated the fixed `-22 mm` physical toolhead offset previously baked into bed centering computations. The build plate visualizer, Safe Area boundaries, and G-code generator now share a unified physical $(0, 0)$ coordinate system.
+  - Clicking **Center Plate** (`Ctrl+C`) or loading an SVG places geometry at the exact mechanical center of the $180 \times 180\text{ mm}$ bed ($[X=90, Y=90]$).
+  - Eliminates out-of-bounds bed crashes on low-$Y$ coordinates when scaling or centering large artworks.
+- **Universal Infill Generation (Linear Hatching & Concentric Contours)**:
+  - Fully decoupled infill generation from SVG CSS fill tags. Closed vector contours, polylines, and multi-polygon geometries automatically receive full Hatching (single or cross-hatch) or Concentric Contour toolpaths both in the live canvas preview and generated G-code.
+- **Calibrated Profile Auto-Default & PyInstaller Frozen Path Resolution**:
+  - Automatically loads and selects the user's calibrated physical pen profile (`Calibrado-03.11.2026`) upon launch in both development and standalone PyInstaller distributions.
+  - Dynamically searches portable `profiles/` next to the executable, allowing in-place edits and custom profile backups without tampering with internal package bundles.
+- **App Version Status Display**:
+  - Replaced machine status string with explicit application version identifier `| v3.11.2` in the status bar for immediate release verification.
+- **Comprehensive Quality Assurance**:
+  - Expanded test suite to **56 passing tests** across deep end-to-end stress testing, concurrency, multi-polygon geometric containment, boundary soft stops, and edge-case fuzzing.
 
 ---
 
@@ -68,13 +86,13 @@ Standard 3D slicers are designed to melt plastic in 3D space with continuous ext
 > **READ CAREFULLY BEFORE ATTACHING A PHYSICAL PEN TO YOUR BAMBU LAB A1 MINI**
 
 1. **NEVER ASSUME Z = 0 IS PAPER CONTACT**:
-   In 3D printing, $Z = 0$ corresponds to the nozzle tip touching the print bed. Pen holder brackets clamp pens such that the pen tip extends **below** the nozzle by $4\text{ to }10\text{ mm}$. If your printer moves to $Z = 0$, the pen will crash violently into the build plate, bending the nib or damaging the toolhead carriage. Always find your actual contact height ($Z_{\text{draw}} \approx 12\text{–}15\text{ mm}$ depending on your bracket) using the built-in [Pen Calibration Wizard](#step-by-step-pen-calibration-guide).
+   In 3D printing, $Z = 0$ corresponds to the nozzle tip touching the print bed. Pen holder brackets clamp pens such that the pen tip extends **below** the nozzle by $4\text{ to }10\text{ mm}$. If your printer moves to $Z = 0$, the pen will crash violently into the build plate, bending the nib or damaging the toolhead carriage. Always find your actual contact height ($Z_{\text{draw}} \approx 1.0\text{–}15.0\text{ mm}$ depending on your bracket) using the built-in [Pen Calibration Wizard](#step-by-step-pen-calibration-guide).
 2. **HOMING PROCEDURE WITH A PEN MOUNTED**:
    Sensorless homing touches the plate or soft stops. **Always home the printer from the touchscreen (`Control → Home`) BEFORE inserting the pen low into the clamp**. Never home axes while the pen is locked in a lowered position.
 3. **USE A SPRING-LOADED PEN HOLDER**:
    A rigid pen mount offers zero vertical compliance. Slight variations in paper thickness, tape folds, or bed mesh will either cause lines to skip or crush the pen nib. Using a spring-loaded adapter (readily available on MakerWorld/Printables) absorbs tolerances safely.
 4. **ALWAYS PERFORM AN "AIR DRAW" TEST FIRST**:
-   Before letting the pen touch paper, perform your initial dry run with the pen removed or clamped high ($5\text{ mm}$ above the paper). Verify that all movements, Z lifts, and boundary clearances behave as expected.
+   Before letting the pen touch paper, perform your initial dry run with the pen removed, clamped high ($5\text{ mm}$ above the paper), or using **Air Draw Mode** in the Export panel. Verify that all movements, Z lifts, and boundary clearances behave as expected.
 5. **AVOID BINDER CLIPS OR RAISED OBSTRUCTIONS**:
    Secure your paper to the 180 × 180 mm textured PEI plate using low-profile blue painter's tape along the margins. Do not use bulky metal binder clips that could collide with the X-axis carriage, gantry, or rear purge wiper.
 
@@ -95,13 +113,14 @@ Standard 3D slicers are designed to melt plastic in 3D space with continuous ext
 - **Safety Margins**: Visualizes the configured usable area ($160 \times 160\text{ mm}$ default) with amber dashed borders and safety exclusion zones.
 - **Interactive CAD Tools**:
   - **Select & Move (`V`)**: Drag drawings directly across the build plate with real-time coordinate updates and Undo/Redo (`Ctrl+Z` / `Ctrl+Y`).
+  - **Interactive Corner Scaling**: 8-handle bounding box manipulation with aspect ratio lock/unlock and real-time dimension HUD.
   - **Pan (`H` or Middle/Right Drag)** and **Cursor-Centered Wheel Zoom**.
   - **Point-to-Point Measurement Tool (`M`)**: Inspect exact $\Delta X$, $\Delta Y$, distance $D$ (`mm`), and angle ($^\circ$).
 
 ### 3. Shape Hatching & Contour Fills
 - **Draw Outlines Only**: Plots the perimeter contours of closed shapes.
 - **Ignore Fills**: Discards fills while preserving explicit stroke paths.
-- **Linear Hatching**: Fills closed polygons (including shapes with interior holes) with parallel lines. Features configurable line spacing (`mm`), angle ($^\circ$), and optional dual-angle cross-hatching. Scan direction alternates on each pass to eliminate unnecessary travel moves.
+- **Linear Hatching**: Fills closed polygons (including complex shapes with holes, letters, and imported artwork) with parallel lines. Features configurable line spacing (`mm`), angle ($^\circ$), and optional dual-angle cross-hatching. Scan direction alternates on each pass to eliminate unnecessary travel moves.
 - **Concentric Contours**: Generates inward offset concentric rings using Shapely polygon buffering.
 
 ### 4. Toolpath Optimization (Nearest-Neighbor & 2-Opt)
@@ -151,18 +170,18 @@ Before any execution-ready file can be exported, the mandatory validation engine
 
 ## Installation
 
-### Option A: Standalone Binary Packages (Recommended)
+### Option A: Standalone Windows Binary (Recommended)
 No Python installation required.
 
 * **Windows (x64)**:
-  1. Download `A1-Mini-Pen-Plotter-v1.10.2-windows-x64.zip` from the [Releases](https://github.com/Hansolox80/a1-mini-pen-plotter/releases) page.
+  1. Download `A1-Mini-Pen-Plotter-v3.11.2-windows-x64.zip` from the [Releases](https://github.com/Hansolox80/a1-mini-pen-plotter/releases) page.
   2. Extract the archive and double-click **`A1 Mini Pen Plotter.exe`**.
   3. *(Optional)* Run `scripts\install_windows.ps1` to create Desktop & Start Menu shortcuts.
 * **Linux (x64)**:
-  1. Download `A1-Mini-Pen-Plotter-v1.10.2-linux-x64.tar.gz` from [Releases](https://github.com/Hansolox80/a1-mini-pen-plotter/releases).
+  1. Download release tarball from [Releases](https://github.com/Hansolox80/a1-mini-pen-plotter/releases).
   2. Extract and run `./A1\ Mini\ Pen\ Plotter/A1\ Mini\ Pen\ Plotter`.
 * **macOS (Apple Silicon & Intel)**:
-  1. Download `A1-Mini-Pen-Plotter-v1.10.2-macos.dmg` from [Releases](https://github.com/Hansolox80/a1-mini-pen-plotter/releases).
+  1. Download release `.dmg` from [Releases](https://github.com/Hansolox80/a1-mini-pen-plotter/releases).
   2. Drag **`A1 Mini Pen Plotter.app`** to your Applications folder.
 
 ### Option B: Running from Source (Python 3.12+)
@@ -213,11 +232,11 @@ The application includes an interactive **6-Step Pen Calibration Wizard** access
 1. **Step 1 — Mount & Clearances**:
    Unload filament, ensure nozzle and bed are at $0^\circ\text{C}$, attach the bracket, tape paper flat, and home the printer (`Control → Home`) on the printer screen.
 2. **Step 2 — Pen Tip Protrusion**:
-   Raise $Z$ to $35\text{ mm}$. Clamp the pen so its tip extends $4\text{ to }8\text{ mm}$ below the nozzle tip. Measure any $X/Y$ offset between nozzle center and pen center (e.g. $Y = -22\text{ mm}$).
+   Raise $Z$ to $35\text{ mm}$. Clamp the pen so its tip extends $4\text{ to }8\text{ mm}$ below the nozzle tip. Measure any $X/Y$ offset between nozzle center and pen center.
 3. **Step 3 — Measure Contact Height ($Z_{\text{draw}}$)**:
-   Jog the toolhead to center $(X=90, Y=90)$. Lower $Z$ in $1.0\text{ mm}$ then $0.1\text{ mm}$ increments while gently moving a piece of paper. The instant the pen tip makes contact (or lightly compresses a spring mount by $0.5\text{ mm}$), note the screen's Z value (typically $12.0\text{–}15.0\text{ mm}$) and enter it as **Drawing Z**.
+   Jog the toolhead to center $(X=90, Y=90)$. Lower $Z$ in $1.0\text{ mm}$ then $0.1\text{ mm}$ increments while gently moving a piece of paper. The instant the pen tip makes contact (or lightly compresses a spring mount by $0.5\text{ mm}$), note the screen's Z value (typically $1.0\text{–}15.0\text{ mm}$) and enter it as **Drawing Z**.
 4. **Step 4 — Configure Safe Lifted Height ($Z_{\text{up}}$)**:
-   Set the **Lift Height ($\Delta Z$)** ($3.0\text{ to }5.0\text{ mm}$). The resulting **Pen-Up Z** ($Z_{\text{draw}} + \Delta Z \approx 17.0\text{–}19.0\text{ mm}$) ensures rapid moves clear tape edges and surface ripples.
+   Set the **Lift Height ($\Delta Z$)** ($3.0\text{ to }5.0\text{ mm}$). The resulting **Pen-Up Z** ($Z_{\text{draw}} + \Delta Z$) ensures rapid moves clear tape edges and surface ripples.
 5. **Step 5 — Test Movement**:
    Export the generated $20 \times 20\text{ mm}$ calibration test square G-code and run it to verify line quality and safe pen lifts.
 6. **Step 6 — Save Profile**:
@@ -251,13 +270,13 @@ To generate a release `.zip` with SHA-256 and MD5 checksums ready for GitHub Rel
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\package_release.ps1
 ```
-Output: `dist\A1-Mini-Pen-Plotter-v1.10.2-windows-x64.zip`.
+Output: `dist\A1-Mini-Pen-Plotter-v3.11.2-windows-x64.zip`.
 
 ---
 
 ## Running Automated Tests
 
-A comprehensive test suite of 50 unit, safety, fuzzing, concurrency, stress, and UI integration tests is provided in [`tests/`](tests/):
+A comprehensive test suite of 56 unit, safety, fuzzing, concurrency, stress, and UI integration tests is provided in [`tests/`](tests/):
 
 ```powershell
 pytest -v
@@ -270,13 +289,14 @@ Full technical report and QA findings available in [`BUG_HUNT_LOG.md`](BUG_HUNT_
 - **Circle Dimensions**: $20\text{ mm}$ diameter circle bounding box and circumference ($20\pi\text{ mm}$).
 - **Diagonal Vectors**: Line length calculation $\sqrt{\Delta X^2 + \Delta Y^2}$.
 - **Curve Flattening**: Adaptive cubic Bézier, quadratic Bézier, and elliptical arcs.
+- **Infill & Contours**: Geometric containment of hatching and concentric contours inside closed shapes and complex multi-polygons.
 - **Optimization Benchmark**: Nearest-Neighbor and 2-Opt travel distance reduction.
 - **ViewBox Scaling**: Physical scaling from unitless viewBox user units.
 - **Nested Transforms**: Matrix composition across nested `<g>` elements.
 - **Negative Coordinates**: Immediate detection and critical safety blocking.
 - **Oversized Documents**: Documents exceeding $180 \times 180\text{ mm}$ rejected by safety validator.
 - **Imperial Units**: $1\text{ in} \times 1\text{ in}$ square accurately converted to $25.40 \times 25.40\text{ mm}$.
-- **UI Integration**: MainWindow, Canvas, Simulator, Undo/Redo stack, and Dialog logic.
+- **UI Integration**: MainWindow, Canvas, Simulator, Undo/Redo stack, Interactive Corner Resize Tool, and Dialog logic.
 
 ---
 

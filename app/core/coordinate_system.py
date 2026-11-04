@@ -235,9 +235,12 @@ class CoordinateTransformer:
         return final_result
 
     def plate_to_machine_xy(self, plate_x: float, plate_y: float) -> tuple[float, float]:
-        """Applies machine origin, coordinate offsets, and pen offsets to a build-plate coordinate."""
-        mx = plate_x + self.machine.coord_offset_x_mm + self.pen.x_offset_mm
-        my = plate_y + self.machine.coord_offset_y_mm + self.pen.y_offset_mm
+        """Applies machine origin, coordinate offsets, and pen/holder offsets to a build-plate coordinate."""
+        total_off_x = self.machine.pen_holder_offset_x_mm + self.pen.x_offset_mm
+        total_off_y = self.machine.pen_holder_offset_y_mm + self.pen.y_offset_mm
+
+        mx = plate_x + self.machine.coord_offset_x_mm - total_off_x
+        my = plate_y + self.machine.coord_offset_y_mm - total_off_y
 
         if self.machine.origin_position == "center":
             mx += self.machine.nominal_x_mm * 0.5
@@ -246,6 +249,22 @@ class CoordinateTransformer:
             my = self.machine.nominal_y_mm - my
 
         return (mx, my)
+
+    def machine_to_plate_xy(self, mx: float, my: float) -> tuple[float, float]:
+        """Converts machine G-code coordinates back to physical build-plate coordinates (where pen tip touches)."""
+        if self.machine.origin_position == "center":
+            mx -= self.machine.nominal_x_mm * 0.5
+            my -= self.machine.nominal_y_mm * 0.5
+        elif self.machine.origin_position == "back_left":
+            my = self.machine.nominal_y_mm - my
+
+        total_off_x = self.machine.pen_holder_offset_x_mm + self.pen.x_offset_mm
+        total_off_y = self.machine.pen_holder_offset_y_mm + self.pen.y_offset_mm
+
+        plate_x = mx - self.machine.coord_offset_x_mm + total_off_x
+        plate_y = my - self.machine.coord_offset_y_mm + total_off_y
+
+        return (plate_x, plate_y)
 
     @staticmethod
     def compute_bounds(

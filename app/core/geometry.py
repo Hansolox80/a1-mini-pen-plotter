@@ -274,11 +274,15 @@ def simplify_polyline(
 
 def _polylines_to_shapely_polygons(
     polylines: list[list[tuple[float, float]]],
+    is_closed_hint: bool = False,
 ) -> list[Polygon]:
     """Converts closed polylines (including compound paths with holes) into valid Shapely Polygons."""
     rings: list[Polygon] = []
     for poly in polylines:
         if len(poly) < 3:
+            continue
+        dist = math.hypot(poly[0][0] - poly[-1][0], poly[0][1] - poly[-1][1])
+        if not is_closed_hint and dist > 1.5:
             continue
         pts = list(poly)
         if pts[0] != pts[-1]:
@@ -430,18 +434,15 @@ def process_element_fill_and_stroke(
     has_fill: bool,
     fill_settings: FillSettings,
     mode_override: str | None = None,
+    is_closed: bool = False,
 ) -> list[list[tuple[float, float]]]:
     """Applies configured fill mode (ignore, outline, hatch, contour) to element polylines."""
     mode = (mode_override or fill_settings.mode).lower()
 
-    if not has_fill or mode == "outline":
+    if mode == "outline" or mode == "ignore":
         return polylines
 
-    if mode == "ignore":
-        # Still keep outlines if include_outline is True, otherwise return outlines as standard stroke
-        return polylines
-
-    polygons = _polylines_to_shapely_polygons(polylines)
+    polygons = _polylines_to_shapely_polygons(polylines, is_closed_hint=(is_closed or has_fill))
     if not polygons:
         return polylines
 

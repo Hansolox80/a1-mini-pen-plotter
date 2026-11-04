@@ -317,6 +317,7 @@ class ToolpathGenerator:
                 has_fill=el.has_fill,
                 fill_settings=self.fill_settings,
                 mode_override=el.fill_mode_override,
+                is_closed=el.is_closed,
             )
 
             for poly in processed_polys:
@@ -496,7 +497,15 @@ class ToolpathGenerator:
             cur_z = pen_up_z
 
         if min_x == float("inf"):
-            min_x = max_x = min_y = max_y = 0.0
+            stat_min_x = stat_max_x = stat_min_y = stat_max_y = 0.0
+        else:
+            # Report physical build-plate coordinates for drawing bounds metrics
+            p1_x, p1_y = transformer.machine_to_plate_xy(min_x, min_y)
+            p2_x, p2_y = transformer.machine_to_plate_xy(max_x, max_y)
+            stat_min_x = min(p1_x, p2_x)
+            stat_max_x = max(p1_x, p2_x)
+            stat_min_y = min(p1_y, p2_y)
+            stat_max_y = max(p1_y, p2_y)
 
         improvement_pct = 0.0
         if unoptimized_travel > 1e-3 and unoptimized_travel >= travel_dist:
@@ -505,12 +514,12 @@ class ToolpathGenerator:
         est_time = sum(m.duration_seconds for m in moves)
 
         stats = ToolpathStats(
-            drawing_width_mm=max(0.0, max_x - min_x),
-            drawing_height_mm=max(0.0, max_y - min_y),
-            min_x=min_x,
-            min_y=min_y,
-            max_x=max_x,
-            max_y=max_y,
+            drawing_width_mm=max(0.0, stat_max_x - stat_min_x),
+            drawing_height_mm=max(0.0, stat_max_y - stat_min_y),
+            min_x=stat_min_x,
+            min_y=stat_min_y,
+            max_x=stat_max_x,
+            max_y=stat_max_y,
             num_paths=len(final_paths),
             num_movements=len(moves),
             num_pen_lifts=pen_lifts,

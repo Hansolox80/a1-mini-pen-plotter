@@ -144,8 +144,17 @@ class ProfileManager:
 
     def __init__(self, base_dir: Optional[Path] = None) -> None:
         if base_dir is None:
-            # Resolve project root profiles directory
-            base_dir = Path(__file__).resolve().parent.parent.parent / "profiles"
+            import sys
+            if getattr(sys, "frozen", False):
+                # When frozen by PyInstaller: prefer profiles adjacent to the executable, else fallback to _internal
+                exe_profiles = Path(sys.executable).resolve().parent / "profiles"
+                if exe_profiles.exists():
+                    base_dir = exe_profiles
+                else:
+                    base_dir = Path(__file__).resolve().parent.parent.parent / "profiles"
+            else:
+                # Resolve project root profiles directory
+                base_dir = Path(__file__).resolve().parent.parent.parent / "profiles"
         self.base_dir = Path(base_dir)
         self.machines_dir = self.base_dir / "machines"
         self.pens_dir = self.base_dir / "pens"

@@ -403,7 +403,7 @@ class MainWindow(QMainWindow):
         self.lbl_st_valid.setStyleSheet("color: #4ADE80; font-weight: 700;")
         sb.addPermanentWidget(self.lbl_st_valid)
 
-        self.lbl_st_machine = QLabel("  |  Machine: Bambu Lab A1 Mini", sb)
+        self.lbl_st_machine = QLabel(f"  |  v{__version__}", sb)
         self.lbl_st_machine.setObjectName("MutedLabel")
         sb.addPermanentWidget(self.lbl_st_machine)
 
@@ -597,7 +597,7 @@ class MainWindow(QMainWindow):
         )
         mins, secs = divmod(int(round(st.estimated_time_seconds)), 60)
         self.lbl_st_time.setText(f"  |  Est. Time: {mins:02d}:{secs:02d}")
-        self.lbl_st_machine.setText(f"  |  Machine: {self.project.machine_profile.name}")
+        self.lbl_st_machine.setText(f"  |  v{__version__}")
 
         if rep.overall_status == ValidationSeverity.CRITICAL:
             self.lbl_st_valid.setText(f"  |  Validation: CRITICAL ERROR ({rep.critical_count})")
@@ -660,8 +660,8 @@ class MainWindow(QMainWindow):
     def action_align_safe_origin(self) -> None:
         m = self.project.machine_profile
         new_t = DocumentTransform.from_dict(self.project.doc_transform.to_dict())
-        new_t.pos_x_mm = round(m.usable_min_x, 2)
-        new_t.pos_y_mm = round(m.usable_min_y, 2)
+        new_t.pos_x_mm = round(m.effective_usable_min_x, 2)
+        new_t.pos_y_mm = round(m.effective_usable_min_y, 2)
         self._on_inspector_transform_changed(new_t)
 
     def action_fit_to_safe_area(self) -> None:
@@ -673,16 +673,16 @@ class MainWindow(QMainWindow):
             return
         m = self.project.machine_profile
         pad = 2.0
-        avail_w = max(10.0, m.usable_width_mm - 2 * pad)
-        avail_h = max(10.0, m.usable_height_mm - 2 * pad)
+        avail_w = max(10.0, m.effective_usable_width_mm - 2 * pad)
+        avail_h = max(10.0, m.effective_usable_height_mm - 2 * pad)
         scale = min(avail_w / nb.width, avail_h / nb.height)
         new_w = nb.width * scale
         new_h = nb.height * scale
         new_t = DocumentTransform.from_dict(self.project.doc_transform.to_dict())
         new_t.scale_x = round(scale, 4)
         new_t.scale_y = round(scale, 4)
-        new_t.pos_x_mm = round(m.usable_min_x + (m.usable_width_mm - new_w) * 0.5, 2)
-        new_t.pos_y_mm = round(m.usable_min_y + (m.usable_height_mm - new_h) * 0.5, 2)
+        new_t.pos_x_mm = round(m.effective_usable_min_x + (m.effective_usable_width_mm - new_w) * 0.5, 2)
+        new_t.pos_y_mm = round(m.effective_usable_min_y + (m.effective_usable_height_mm - new_h) * 0.5, 2)
         self._on_inspector_transform_changed(new_t)
 
     def action_open_resize_dialog(self) -> None:

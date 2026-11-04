@@ -78,7 +78,7 @@ class MachineProfile:
     max_draw_speed_mm_s: float = 80.0
     max_z_speed_mm_s: float = 25.0
     safe_z_mm: float = 22.0
-    min_safe_z_mm: float = 2.0
+    min_safe_z_mm: float = 0.5
     max_safe_z_mm: float = 160.0
     park_x_mm: float = 0.0
     park_y_mm: float = 170.0
@@ -167,7 +167,7 @@ class MachineProfile:
             max_draw_speed_mm_s=float(data.get("max_draw_speed_mm_s", 80.0)),
             max_z_speed_mm_s=float(data.get("max_z_speed_mm_s", 25.0)),
             safe_z_mm=float(data.get("safe_z_mm", 22.0)),
-            min_safe_z_mm=float(data.get("min_safe_z_mm", 2.0)),
+            min_safe_z_mm=float(data.get("min_safe_z_mm", 0.5)),
             max_safe_z_mm=float(data.get("max_safe_z_mm", 160.0)),
             park_x_mm=float(data.get("park_x_mm", 0.0)),
             park_y_mm=float(data.get("park_y_mm", 170.0)),

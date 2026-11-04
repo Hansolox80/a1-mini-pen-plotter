@@ -19,7 +19,7 @@
   "max_draw_speed_mm_s": 80.0,
   "max_z_speed_mm_s": 25.0,
   "safe_z_mm": 22.0,
-  "min_safe_z_mm": 2.0,
+  "min_safe_z_mm": 0.5,
   "max_safe_z_mm": 160.0,
   "park_x_mm": 0.0,
   "park_y_mm": 170.0,

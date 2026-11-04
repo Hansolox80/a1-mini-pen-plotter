@@ -595,3 +595,127 @@ def test_memory_cleanup_after_svg_parsing():
     del large_svg_parts
     del large_svg
     gc.collect()
+
+
+def test_pen_holder_offset_centering_compensation():
+    """Validates that pen holder offset (-22.0 mm Y) correctly shifts G-code carriage commands
+    so that physical pen marks land exactly at intended build-plate coordinates."""
+    machine = create_default_a1_mini_profile()
+    pen = create_default_pen_profiles()[0]
+    transformer = CoordinateTransformer(machine, pen)
+
+    # 1. Coordinate transformation mapping
+    # Center of plate is (90, 90). Pen holder is at -22mm Y relative to nozzle.
+    # Therefore nozzle carriage must move to Y = 90 - (-22) = 112mm.
+    mx, my = transformer.plate_to_machine_xy(90.0, 90.0)
+    assert math.isclose(mx, 90.0, abs_tol=1e-3)
+    assert math.isclose(my, 112.0, abs_tol=1e-3)
+
+    # Inverse mapping restores plate coordinates
+    px, py = transformer.machine_to_plate_xy(mx, my)
+    assert math.isclose(px, 90.0, abs_tol=1e-3)
+    assert math.isclose(py, 90.0, abs_tol=1e-3)
+
+    # 2. End-to-end toolpath generation for centered 100x100mm square
+    parser = SvgParser()
+    svg_data = '<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="100mm"><rect x="0" y="0" width="100" height="100" fill="none" stroke="#000"/></svg>'
+    doc = parser.parse_string(svg_data)
+    gen = ToolpathGenerator(machine, pen)
+    # Centered on 180x180 plate: bottom-left at (40, 40)
+    moves, stats = gen.generate(doc, DocumentTransform(pos_x_mm=40.0, pos_y_mm=40.0))
+
+    # Plate stats should report physical drawing bounds [40..140]
+    assert math.isclose(stats.drawing_width_mm, 100.0, abs_tol=1e-3)
+    assert math.isclose(stats.drawing_height_mm, 100.0, abs_tol=1e-3)
+    assert math.isclose(stats.min_x, 40.0, abs_tol=1e-3)
+    assert math.isclose(stats.min_y, 40.0, abs_tol=1e-3)
+    assert math.isclose(stats.max_x, 140.0, abs_tol=1e-3)
+    assert math.isclose(stats.max_y, 140.0, abs_tol=1e-3)
+
+    # Actual machine moves commanded to the printer must be shifted by +22mm: [62..162]
+    draw_moves = [m for m in moves if m.move_type == MovementType.DRAW]
+    assert len(draw_moves) > 0
+    machine_min_y = min(min(m.start_y, m.end_y) for m in draw_moves)
+    machine_max_y = max(max(m.start_y, m.end_y) for m in draw_moves)
+    assert math.isclose(machine_min_y, 62.0, abs_tol=1e-3)
+    assert math.isclose(machine_max_y, 162.0, abs_tol=1e-3)
+
+
+def test_infill_hatching_and_contour_on_unfilled_closed_shapes():
+    """Validates that closed paths with fill='none' correctly generate infill paths when mode is hatch or contour."""
+    parser = SvgParser()
+    svg_data = '<svg xmlns="http://www.w3.org/2000/svg" width="50mm" height="50mm"><rect x="5" y="5" width="40" height="40" fill="none" stroke="#000"/></svg>'
+    doc = parser.parse_string(svg_data)
+    assert doc.elements[0].is_closed is True
+
+    machine = create_default_a1_mini_profile()
+    pen = create_default_pen_profiles()[0]
+
+    # 1. Outline only mode
+    gen_outline = ToolpathGenerator(machine, pen, fill_settings=FillSettings(mode="outline"))
+    moves_out, stats_out = gen_outline.generate(doc, DocumentTransform(pos_x_mm=20.0, pos_y_mm=20.0))
+
+    # 2. Hatching mode
+    gen_hatch = ToolpathGenerator(machine, pen, fill_settings=FillSettings(mode="hatch", hatch_spacing_mm=2.0))
+    moves_hatch, stats_hatch = gen_hatch.generate(doc, DocumentTransform(pos_x_mm=20.0, pos_y_mm=20.0))
+    assert stats_hatch.num_paths > stats_out.num_paths
+    assert stats_hatch.drawing_distance_mm > stats_out.drawing_distance_mm * 2.0
+
+    # 3. Contour mode
+    gen_contour = ToolpathGenerator(machine, pen, fill_settings=FillSettings(mode="contour", contour_spacing_mm=2.0))
+    moves_cont, stats_cont = gen_contour.generate(doc, DocumentTransform(pos_x_mm=20.0, pos_y_mm=20.0))
+    assert stats_cont.num_paths > stats_out.num_paths
+    assert stats_cont.drawing_distance_mm > stats_out.drawing_distance_mm * 1.5
+
+
+def test_safe_z_minimum_threshold():
+    """Validates that a low Drawing Z (e.g. 1.0mm) passes safety validation when min_safe_z_mm is 0.5mm."""
+    machine = create_default_a1_mini_profile()
+    assert machine.min_safe_z_mm <= 0.5
+    pen = create_default_pen_profiles()[0]
+    pen.is_calibrated = True
+    pen.drawing_z_mm = 1.00
+    pen.pen_down_z_mm = 1.20
+    pen.pen_up_z_mm = 6.00
+
+    from app.machine.safety import SafetyValidator, ValidationSeverity
+
+    mv_down = ToolpathMove(
+        index=0,
+        move_type=MovementType.PEN_DOWN,
+        start_x=50.0,
+        start_y=50.0,
+        start_z=6.00,
+        end_x=50.0,
+        end_y=50.0,
+        end_z=1.00,
+        feed_rate_mm_min=480.0,
+    )
+    mv_draw = ToolpathMove(
+        index=1,
+        move_type=MovementType.DRAW,
+        start_x=50.0,
+        start_y=50.0,
+        start_z=1.00,
+        end_x=60.0,
+        end_y=60.0,
+        end_z=1.00,
+        feed_rate_mm_min=3000.0,
+    )
+    mv_up = ToolpathMove(
+        index=2,
+        move_type=MovementType.PEN_UP,
+        start_x=60.0,
+        start_y=60.0,
+        start_z=1.00,
+        end_x=60.0,
+        end_y=60.0,
+        end_z=6.00,
+        feed_rate_mm_min=1200.0,
+    )
+    validator = SafetyValidator(machine, pen)
+    gcode = "G21\nG90\nG1 Z1.000 F480\nG1 X60 Y60 Z1.000 F3000\nG1 Z6.000 F1200\n"
+    report = validator.validate([mv_down, mv_draw, mv_up], gcode)
+    assert report.overall_status != ValidationSeverity.CRITICAL
+    assert not any(i.code in ("Z_BELOW_SAFE_MINIMUM", "Z_OUT_OF_SAFE_RANGE") for i in report.issues)
+

@@ -39,6 +39,7 @@ from app.core.models import (
     ParsedSvgDocument,
     ToolpathMove,
 )
+from app.core.coordinate_system import CoordinateTransformer
 from app.core.platform_utils import get_mono_font_family, get_system_font_family
 from app.core.simulator import SimulationState
 from app.machine.a1_mini import MachineProfile
@@ -536,14 +537,18 @@ class BuildPlateCanvas(QWidget):
         if not self.moves:
             return
 
+        transformer = CoordinateTransformer(machine=self.machine, pen=self.pen)
         w_lim = self.machine.nominal_x_mm
         h_lim = self.machine.nominal_y_mm
 
         current_poly: list[QPointF] = []
 
         for mv in self.moves:
+            psx, psy = transformer.machine_to_plate_xy(mv.start_x, mv.start_y)
+            pex, pey = transformer.machine_to_plate_xy(mv.end_x, mv.end_y)
+
             if mv.move_type == MovementType.DRAW:
-                self._sim_draw_lines.append(QLineF(mv.start_x, mv.start_y, mv.end_x, mv.end_y))
+                self._sim_draw_lines.append(QLineF(psx, psy, pex, pey))
                 oob = (
                     mv.start_x < 0.0
                     or mv.end_x < 0.0
@@ -553,6 +558,14 @@ class BuildPlateCanvas(QWidget):
                     or mv.end_x > w_lim
                     or mv.start_y > h_lim
                     or mv.end_y > h_lim
+                    or psx < 0.0
+                    or pex < 0.0
+                    or psy < 0.0
+                    or pey < 0.0
+                    or psx > w_lim
+                    or pex > w_lim
+                    or psy > h_lim
+                    or pey > h_lim
                 )
                 if oob:
                     if current_poly:
@@ -560,19 +573,19 @@ class BuildPlateCanvas(QWidget):
                             self._cached_draw_ok_polys.append(QPolygonF(current_poly))
                         current_poly = []
                     self._cached_draw_err_lines.append(
-                        QLineF(mv.start_x, mv.start_y, mv.end_x, mv.end_y)
+                        QLineF(psx, psy, pex, pey)
                     )
                 else:
                     if not current_poly:
-                        current_poly.append(QPointF(mv.start_x, mv.start_y))
-                    current_poly.append(QPointF(mv.end_x, mv.end_y))
+                        current_poly.append(QPointF(psx, psy))
+                    current_poly.append(QPointF(pex, pey))
             else:
                 if current_poly:
                     if len(current_poly) >= 2:
                         self._cached_draw_ok_polys.append(QPolygonF(current_poly))
                     current_poly = []
                 if mv.move_type == MovementType.TRAVEL:
-                    line = QLineF(mv.start_x, mv.start_y, mv.end_x, mv.end_y)
+                    line = QLineF(psx, psy, pex, pey)
                     self._cached_travel_lines.append(line)
                     self._sim_travel_lines.append(line)
 
@@ -1331,7 +1344,9 @@ class BuildPlateCanvas(QWidget):
     def _draw_simulator_toolhead(self, painter: QPainter) -> None:
         if self.sim_state is None:
             return
-        pt = self.mm_to_screen(self.sim_state.x, self.sim_state.y)
+        transformer = CoordinateTransformer(machine=self.machine, pen=self.pen)
+        px, py = transformer.machine_to_plate_xy(self.sim_state.x, self.sim_state.y)
+        pt = self.mm_to_screen(px, py)
 
         if self.sim_state.is_pen_down:
             # Pen Down: Solid green glow
@@ -1350,7 +1365,7 @@ class BuildPlateCanvas(QWidget):
         # Toolhead coordinate tag
         if self.simulation_active:
             state_lbl = "PEN DOWN" if self.sim_state.is_pen_down else "PEN UP"
-            tag = f"{state_lbl} ({self.sim_state.x:.1f}, {self.sim_state.y:.1f}, Z{self.sim_state.z:.1f})"
+            tag = f"{state_lbl} ({px:.1f}, {py:.1f}, Z{self.sim_state.z:.1f})"
             font = self._make_mono_font(8, bold=True)
             painter.setFont(font)
             fm = painter.fontMetrics()

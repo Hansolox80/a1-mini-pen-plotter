@@ -9,6 +9,7 @@ import re
 from typing import Any, Optional
 
 from app.core.models import MovementType, ToolpathMove
+from app.core.coordinate_system import CoordinateTransformer
 from app.machine.a1_mini import MachineProfile
 from app.machine.profiles import PenProfile
 
@@ -285,6 +286,7 @@ class SafetyValidator:
                 )
 
     def _validate_moves(self, moves: list[ToolpathMove], report: SafetyValidationReport) -> None:
+        transformer = CoordinateTransformer(self.machine, self.pen)
         min_x = float("inf")
         max_x = float("-inf")
         min_y = float("inf")
@@ -390,17 +392,19 @@ class SafetyValidator:
                     )
                 )
 
-            # Check configured usable safety margins for drawing moves (both start and end)
+            # Check configured usable safety margins for drawing moves (pen tip on build plate)
             if mv.move_type == MovementType.DRAW:
+                psx, psy = transformer.machine_to_plate_xy(mv.start_x, mv.start_y)
+                pex, pey = transformer.machine_to_plate_xy(mv.end_x, mv.end_y)
                 out_of_margin = (
-                    mv.start_x < self.machine.usable_min_x - 1e-5
-                    or mv.start_x > self.machine.usable_max_x + 1e-5
-                    or mv.start_y < self.machine.usable_min_y - 1e-5
-                    or mv.start_y > self.machine.usable_max_y + 1e-5
-                    or mv.end_x < self.machine.usable_min_x - 1e-5
-                    or mv.end_x > self.machine.usable_max_x + 1e-5
-                    or mv.end_y < self.machine.usable_min_y - 1e-5
-                    or mv.end_y > self.machine.usable_max_y + 1e-5
+                    psx < self.machine.usable_min_x - 1e-5
+                    or psx > self.machine.usable_max_x + 1e-5
+                    or psy < self.machine.usable_min_y - 1e-5
+                    or psy > self.machine.usable_max_y + 1e-5
+                    or pex < self.machine.usable_min_x - 1e-5
+                    or pex > self.machine.usable_max_x + 1e-5
+                    or pey < self.machine.usable_min_y - 1e-5
+                    or pey > self.machine.usable_max_y + 1e-5
                 )
                 if out_of_margin:
                     add_issue_throttled(
@@ -409,8 +413,8 @@ class SafetyValidator:
                             code="OUTSIDE_SAFETY_MARGIN",
                             title="Drawing Movement Enters Safety Margin",
                             message=(
-                                f"Drawing move ({mv.start_x:.2f},{mv.start_y:.2f}) -> ({mv.end_x:.2f},{mv.end_y:.2f}) mm "
-                                f"violates usable area soft stop X[{self.machine.usable_min_x:.1f}..{self.machine.usable_max_x:.1f}], "
+                                f"Drawing pen tip ({psx:.2f},{psy:.2f}) -> ({pex:.2f},{pey:.2f}) mm "
+                                f"violates plate usable safety margin X[{self.machine.usable_min_x:.1f}..{self.machine.usable_max_x:.1f}], "
                                 f"Y[{self.machine.usable_min_y:.1f}..{self.machine.usable_max_y:.1f}] mm."
                             ),
                             line_number=mv.gcode_line_number,
