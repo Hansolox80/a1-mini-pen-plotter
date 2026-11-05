@@ -60,7 +60,7 @@ rm -rf build dist/"A1 Mini Pen Plotter"
 pyinstaller --noconfirm --clean A1_Mini_Pen_Plotter.spec
 
 # 7. Package Distribution Tarball
-VERSION="1.10.1"
+VERSION=$(python -c "import re; m = re.search(r'__version__\s*=\s*[\"\'\']([^\"\'\']+)[\"\'\']', open('app/__init__.py').read()); print(m.group(1) if m else '3.11.2')")
 DIST_DIR="dist/A1 Mini Pen Plotter"
 ARCHIVE_NAME="dist/A1-Mini-Pen-Plotter-v${VERSION}-linux-x64.tar.gz"
 

@@ -170,19 +170,33 @@ Before any execution-ready file can be exported, the mandatory validation engine
 
 ## Installation
 
-### Option A: Standalone Windows Binary (Recommended)
-No Python installation required.
+### Option A: Standalone Binary Packages (Recommended)
+No Python installation required. Download pre-compiled standalone packages directly from [GitHub Releases](https://github.com/Hansolox80/a1-mini-pen-plotter/releases/tag/v3.11.2):
+
+#### 📦 Official Release Binaries & Verification
+
+| Asset | Platform | Architecture | Description |
+| :--- | :--- | :--- | :--- |
+| **`A1-Mini-Pen-Plotter-v3.11.2-windows-x64.zip`** | Windows 10/11 | x64 | Portable Windows standalone (extract and run) |
+| **`A1-Mini-Pen-Plotter-v3.11.2-linux-x64.tar.gz`** | Linux (Ubuntu/Debian/Fedora) | x64 | Standalone Linux binary distribution archive |
+| **`A1-Mini-Pen-Plotter-v3.11.2-macos-arm64.dmg`** | macOS 12+ (Monterey, Sonoma, Sequoia) | Apple Silicon (M1/M2/M3/M4) | Drag-and-drop macOS disk image installer |
+| **`A1-Mini-Pen-Plotter-v3.11.2-macos-arm64.zip`** | macOS 12+ (Monterey, Sonoma, Sequoia) | Apple Silicon (M1/M2/M3/M4) | Compressed `.app` application bundle |
+| **`SHA256SUMS.txt`** | All | Multi | Official SHA-256 integrity checksums |
+
+#### 🚀 Quick Launch by OS:
 
 * **Windows (x64)**:
-  1. Download `A1-Mini-Pen-Plotter-v3.11.2-windows-x64.zip` from the [Releases](https://github.com/Hansolox80/a1-mini-pen-plotter/releases) page.
+  1. Download `A1-Mini-Pen-Plotter-v3.11.2-windows-x64.zip`.
   2. Extract the archive and double-click **`A1 Mini Pen Plotter.exe`**.
   3. *(Optional)* Run `scripts\install_windows.ps1` to create Desktop & Start Menu shortcuts.
 * **Linux (x64)**:
-  1. Download release tarball from [Releases](https://github.com/Hansolox80/a1-mini-pen-plotter/releases).
-  2. Extract and run `./A1\ Mini\ Pen\ Plotter/A1\ Mini\ Pen\ Plotter`.
-* **macOS (Apple Silicon & Intel)**:
-  1. Download release `.dmg` from [Releases](https://github.com/Hansolox80/a1-mini-pen-plotter/releases).
-  2. Drag **`A1 Mini Pen Plotter.app`** to your Applications folder.
+  1. Download `A1-Mini-Pen-Plotter-v3.11.2-linux-x64.tar.gz`.
+  2. Extract the archive: `tar -xzf A1-Mini-Pen-Plotter-v3.11.2-linux-x64.tar.gz`.
+  3. Run: `./A1\ Mini\ Pen\ Plotter/A1\ Mini\ Pen\ Plotter`.
+* **macOS (Apple Silicon M1/M2/M3/M4)**:
+  1. Download `A1-Mini-Pen-Plotter-v3.11.2-macos-arm64.dmg`.
+  2. Open the disk image and drag **`A1 Mini Pen Plotter.app`** to your **Applications** folder.
+  3. *(Alternative)* Download `A1-Mini-Pen-Plotter-v3.11.2-macos-arm64.zip`, extract, and launch.
 
 ### Option B: Running from Source (Python 3.12+)
 
