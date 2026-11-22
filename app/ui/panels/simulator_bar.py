@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 from app.core.models import ToolpathMove
 from app.core.simulator import SimulationState, ToolpathSimulator
 from app.ui.icons import make_icon
+from app.ui.theme import get_theme_tokens
 
 
 class SimulatorControlBar(QFrame):
@@ -66,9 +67,10 @@ class SimulatorControlBar(QFrame):
         self.btn_step_back.clicked.connect(self.on_step_backward)
         row1.addWidget(self.btn_step_back)
 
+        t = get_theme_tokens()
         self.btn_play_pause = QPushButton("Simulate", self)
         self.btn_play_pause.setObjectName("PrimaryButton")
-        self.btn_play_pause.setIcon(make_icon("play", "#09110B", size=14))
+        self.btn_play_pause.setIcon(make_icon("play", t["accent_contrast"], size=14))
         self.btn_play_pause.setFixedWidth(98)
         self.btn_play_pause.clicked.connect(self.on_toggle_play)
         row1.addWidget(self.btn_play_pause)
@@ -109,8 +111,8 @@ class SimulatorControlBar(QFrame):
 
         self.lbl_pen_state = QLabel("PEN UP", self)
         self.lbl_pen_state.setStyleSheet(
-            "background-color: rgba(56, 189, 248, 0.16); color: #38BDF8; "
-            "border: 1px solid rgba(56, 189, 248, 0.4); border-radius: 3px; padding: 1px 8px; font-weight: 700;"
+            f"background-color: rgba(56, 189, 248, 0.16); color: {t['color_travel']}; "
+            f"border: 1px solid {t['color_travel']}; border-radius: 3px; padding: 1px 8px; font-weight: 700;"
         )
         row2.addWidget(self.lbl_pen_state)
 
@@ -124,7 +126,10 @@ class SimulatorControlBar(QFrame):
 
         self.lbl_gcode_cmd = QLabel("G90 ; Ready to simulate", self)
         self.lbl_gcode_cmd.setObjectName("MonoValueLabel")
-        self.lbl_gcode_cmd.setStyleSheet("color: #4ADE80; background-color: #121519; padding: 2px 8px; border-radius: 3px;")
+        self.lbl_gcode_cmd.setStyleSheet(
+            f"color: {t['accent_primary']}; background-color: {t['bg_input']}; "
+            f"border: 1px solid {t['border_subtle']}; padding: 2px 8px; border-radius: 3px;"
+        )
         row2.addWidget(self.lbl_gcode_cmd, 1)
 
         btn_view_gcode = QPushButton("G-Code Viewer", self)
@@ -214,16 +219,48 @@ class SimulatorControlBar(QFrame):
         self._sync_ui_from_state()
         self.simulation_updated.emit(st, self._sim_active)
 
+    def refresh_theme(self) -> None:
+        """Refreshes transport icons, pen-state badge, and G-code readout style for the active theme."""
+        t = get_theme_tokens()
+        self.btn_restart.setIcon(make_icon("restart", size=15))
+        self.btn_step_back.setIcon(make_icon("step_back", size=15))
+        self.btn_step_fwd.setIcon(make_icon("step_forward", size=15))
+        is_playing = self.simulator.state.is_playing
+        self.btn_play_pause.setIcon(
+            make_icon("pause" if is_playing else "play", t["accent_contrast"], size=14)
+        )
+        self.lbl_gcode_cmd.setStyleSheet(
+            f"color: {t['accent_primary']}; background-color: {t['bg_input']}; "
+            f"border: 1px solid {t['border_subtle']}; padding: 2px 8px; border-radius: 3px;"
+        )
+        self._apply_pen_state_style(self.simulator.state.is_pen_down)
+
+    def _apply_pen_state_style(self, is_pen_down: bool) -> None:
+        t = get_theme_tokens()
+        if is_pen_down:
+            self.lbl_pen_state.setText("PEN DOWN (DRAW)")
+            self.lbl_pen_state.setStyleSheet(
+                f"background-color: {t['badge_bg']}; color: {t['accent_primary']}; "
+                f"border: 1px solid {t['accent_primary']}; border-radius: 3px; padding: 1px 8px; font-weight: 700;"
+            )
+        else:
+            self.lbl_pen_state.setText("PEN UP (TRAVEL)")
+            self.lbl_pen_state.setStyleSheet(
+                f"background-color: rgba(56, 189, 248, 0.16); color: {t['color_travel']}; "
+                f"border: 1px solid {t['color_travel']}; border-radius: 3px; padding: 1px 8px; font-weight: 700;"
+            )
+
     def _sync_ui_from_state(self) -> None:
+        t = get_theme_tokens()
         st = self.simulator.state
         if self._last_is_playing != st.is_playing:
             self._last_is_playing = st.is_playing
             if st.is_playing:
                 self.btn_play_pause.setText("Pause")
-                self.btn_play_pause.setIcon(make_icon("pause", "#09110B", size=14))
+                self.btn_play_pause.setIcon(make_icon("pause", t["accent_contrast"], size=14))
             else:
                 self.btn_play_pause.setText("Simulate")
-                self.btn_play_pause.setIcon(make_icon("play", "#09110B", size=14))
+                self.btn_play_pause.setIcon(make_icon("play", t["accent_contrast"], size=14))
 
         self._updating_slider = True
         self.slider_progress.setValue(st.current_move_index)
@@ -231,18 +268,7 @@ class SimulatorControlBar(QFrame):
 
         if self._last_pen_down != st.is_pen_down:
             self._last_pen_down = st.is_pen_down
-            if st.is_pen_down:
-                self.lbl_pen_state.setText("PEN DOWN (DRAW)")
-                self.lbl_pen_state.setStyleSheet(
-                    "background-color: rgba(34, 197, 94, 0.22); color: #4ADE80; "
-                    "border: 1px solid #22C55E; border-radius: 3px; padding: 1px 8px; font-weight: 700;"
-                )
-            else:
-                self.lbl_pen_state.setText("PEN UP (TRAVEL)")
-                self.lbl_pen_state.setStyleSheet(
-                    "background-color: rgba(56, 189, 248, 0.16); color: #38BDF8; "
-                    "border: 1px solid rgba(56, 189, 248, 0.4); border-radius: 3px; padding: 1px 8px; font-weight: 700;"
-                )
+            self._apply_pen_state_style(st.is_pen_down)
 
         self.lbl_xyz.setText(f"X: {st.x:6.2f} mm   Y: {st.y:6.2f} mm   Z: {st.z:6.2f} mm")
 

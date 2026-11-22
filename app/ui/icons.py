@@ -6,6 +6,8 @@ from PySide6.QtCore import QByteArray, QRectF, Qt
 from PySide6.QtGui import QIcon, QImage, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 
+from app.ui.theme import get_theme_tokens
+
 
 # Inner SVG path fragments for Lucide-style icons (24x24 viewBox)
 _ICON_PATHS: dict[str, str] = {
@@ -44,8 +46,10 @@ _ICON_PATHS: dict[str, str] = {
 }
 
 
-def make_icon(name: str, color: str = "#E2E8F0", size: int = 18) -> QIcon:
+def make_icon(name: str, color: str | None = None, size: int = 18) -> QIcon:
     """Renders a named Lucide vector icon into a crisp QIcon."""
+    if color is None:
+        color = str(get_theme_tokens()["text_primary"])
     body = _ICON_PATHS.get(name, _ICON_PATHS["crosshair"])
     svg_xml = (
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" viewBox="0 0 24 24" '

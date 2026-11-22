@@ -34,6 +34,7 @@ from app.core.models import ParsedSvgDocument, WorkflowMode
 from app.machine.a1_mini import MachineProfile
 from app.machine.profiles import PenProfile, ProfileManager
 from app.ui.icons import make_icon
+from app.ui.theme import get_theme_tokens
 
 
 class LeftSidebar(QFrame):
@@ -70,7 +71,8 @@ class LeftSidebar(QFrame):
         layout.setSpacing(6)
 
         self.tabs = QTabWidget(self)
-        self.tabs.setDocumentMode(True)
+        self.tabs.setDocumentMode(False)
+        self.tabs.tabBar().setExpanding(False)
         self.tabs.tabBar().setUsesScrollButtons(False)
 
         self.tab_project = self._build_project_layers_tab()
@@ -130,11 +132,11 @@ class LeftSidebar(QFrame):
         row_sample.addWidget(btn_load_sample)
         cp_layout.addLayout(row_sample)
 
-        btn_open_custom = QPushButton("Open SVG File...", card_proj)
-        btn_open_custom.setIcon(make_icon("folder_open", "#22C55E", size=14))
-        btn_open_custom.setToolTip("Open a custom SVG vector drawing from your computer")
-        btn_open_custom.clicked.connect(self.open_svg_requested.emit)
-        cp_layout.addWidget(btn_open_custom)
+        self._btn_open_custom = QPushButton("Open SVG File...", card_proj)
+        self._btn_open_custom.setIcon(make_icon("folder_open", get_theme_tokens()["accent_primary"], size=14))
+        self._btn_open_custom.setToolTip("Open a custom SVG vector drawing from your computer")
+        self._btn_open_custom.clicked.connect(self.open_svg_requested.emit)
+        cp_layout.addWidget(self._btn_open_custom)
 
         vbox.addWidget(card_proj)
 
@@ -199,6 +201,7 @@ class LeftSidebar(QFrame):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.viewport().setAutoFillBackground(False)
 
         content = QWidget()
         vbox = QVBoxLayout(content)
@@ -334,6 +337,7 @@ class LeftSidebar(QFrame):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.viewport().setAutoFillBackground(False)
 
         content = QWidget()
         vbox = QVBoxLayout(content)
@@ -356,15 +360,15 @@ class LeftSidebar(QFrame):
         cp_layout.addWidget(self.cmb_pen)
 
         row1 = QHBoxLayout()
-        btn_new_pen = QPushButton("New", card_pen)
-        btn_new_pen.setIcon(make_icon("plus", size=14))
-        btn_new_pen.clicked.connect(self._on_new_pen)
-        row1.addWidget(btn_new_pen)
+        self._btn_new_pen = QPushButton("New", card_pen)
+        self._btn_new_pen.setIcon(make_icon("plus", size=14))
+        self._btn_new_pen.clicked.connect(self._on_new_pen)
+        row1.addWidget(self._btn_new_pen)
 
-        btn_dup_pen = QPushButton("Duplicate", card_pen)
-        btn_dup_pen.setIcon(make_icon("copy", size=14))
-        btn_dup_pen.clicked.connect(self._on_duplicate_pen)
-        row1.addWidget(btn_dup_pen)
+        self._btn_dup_pen = QPushButton("Duplicate", card_pen)
+        self._btn_dup_pen.setIcon(make_icon("copy", size=14))
+        self._btn_dup_pen.clicked.connect(self._on_duplicate_pen)
+        row1.addWidget(self._btn_dup_pen)
 
         btn_ren_pen = QPushButton("Rename", card_pen)
         btn_ren_pen.clicked.connect(self._on_rename_pen)
@@ -376,11 +380,11 @@ class LeftSidebar(QFrame):
         row1.addWidget(btn_del_pen)
         cp_layout.addLayout(row1)
 
-        btn_cal = QPushButton("Launch 6-Step Pen Calibration Wizard...", card_pen)
-        btn_cal.setIcon(make_icon("wand", "#09110B", size=15))
-        btn_cal.setObjectName("PrimaryButton")
-        btn_cal.clicked.connect(self.calibration_wizard_requested.emit)
-        cp_layout.addWidget(btn_cal)
+        self._btn_cal = QPushButton("Launch 6-Step Pen Calibration Wizard...", card_pen)
+        self._btn_cal.setIcon(make_icon("wand", get_theme_tokens()["accent_contrast"], size=15))
+        self._btn_cal.setObjectName("PrimaryButton")
+        self._btn_cal.clicked.connect(self.calibration_wizard_requested.emit)
+        cp_layout.addWidget(self._btn_cal)
 
         self.lbl_pen_cal_status = QLabel(card_pen)
         self.lbl_pen_cal_status.setWordWrap(True)
@@ -473,6 +477,7 @@ class LeftSidebar(QFrame):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.viewport().setAutoFillBackground(False)
 
         content = QWidget()
         vbox = QVBoxLayout(content)
@@ -550,11 +555,11 @@ class LeftSidebar(QFrame):
         lbl_e.setObjectName("SectionHeader")
         ce_layout.addWidget(lbl_e)
 
-        btn_exp_gcode = QPushButton("Export Plotter G-Code (.gcode)...", card_exp)
-        btn_exp_gcode.setObjectName("PrimaryButton")
-        btn_exp_gcode.setIcon(make_icon("export", "#09110B", size=15))
-        btn_exp_gcode.clicked.connect(self.export_gcode_requested.emit)
-        ce_layout.addWidget(btn_exp_gcode)
+        self._btn_exp_gcode = QPushButton("Export Plotter G-Code (.gcode)...", card_exp)
+        self._btn_exp_gcode.setObjectName("PrimaryButton")
+        self._btn_exp_gcode.setIcon(make_icon("export", get_theme_tokens()["accent_contrast"], size=15))
+        self._btn_exp_gcode.clicked.connect(self.export_gcode_requested.emit)
+        ce_layout.addWidget(self._btn_exp_gcode)
 
         btn_exp_3mf = QPushButton("Export Bambu Studio Container (.gcode.3mf)...", card_exp)
         btn_exp_3mf.clicked.connect(self.export_3mf_requested.emit)
@@ -572,10 +577,10 @@ class LeftSidebar(QFrame):
         btn_exp_png.clicked.connect(self.export_preview_requested.emit)
         ce_layout.addWidget(btn_exp_png)
 
-        btn_safety = QPushButton("Inspect Safety Validation Details...", card_exp)
-        btn_safety.setIcon(make_icon("shield_check", "#22C55E", size=15))
-        btn_safety.clicked.connect(self.inspect_safety_requested.emit)
-        ce_layout.addWidget(btn_safety)
+        self._btn_safety = QPushButton("Inspect Safety Validation Details...", card_exp)
+        self._btn_safety.setIcon(make_icon("shield_check", get_theme_tokens()["accent_primary"], size=15))
+        self._btn_safety.clicked.connect(self.inspect_safety_requested.emit)
+        ce_layout.addWidget(self._btn_safety)
 
         self.chk_air_draw.toggled.connect(self._on_air_draw_changed)
         self.spn_air_offset_z.valueChanged.connect(self._on_air_draw_changed)
@@ -785,25 +790,41 @@ class LeftSidebar(QFrame):
         self.spn_z_speed.setValue(p.z_speed_mm_s)
         self.spn_dwell_ms.setValue(p.stabilization_delay_ms)
         if hasattr(self, "lbl_pen_cal_status"):
+            t = get_theme_tokens()
             if p.is_calibrated:
                 self.lbl_pen_cal_status.setText(
                     f"✅ <b>PHYSICALLY CALIBRATED</b><br>"
-                    f"<span style='color: #94A3B8; font-size: 11px;'>Contact Z = {p.drawing_z_mm:.2f} mm | Up Z = {p.pen_up_z_mm:.2f} mm</span>"
+                    f"<span style='color: {t['text_secondary']}; font-size: 11px;'>Contact Z = {p.drawing_z_mm:.2f} mm | Up Z = {p.pen_up_z_mm:.2f} mm</span>"
                 )
                 self.lbl_pen_cal_status.setStyleSheet(
-                    "background-color: rgba(34, 197, 94, 0.12); color: #22C55E; "
-                    "border: 1px solid rgba(34, 197, 94, 0.35); border-radius: 4px; padding: 6px;"
+                    f"background-color: {t['badge_bg']}; color: {t['accent_primary']}; "
+                    f"border: 1px solid {t['badge_border']}; border-radius: 4px; padding: 6px;"
                 )
             else:
                 self.lbl_pen_cal_status.setText(
                     f"⚠️ <b>NOT CALIBRATED (Default Presumptions)</b><br>"
-                    f"<span style='color: #FBBF24; font-size: 11px;'>Values are theoretical. Run Calibration Wizard to measure real contact Z on your A1 Mini.</span>"
+                    f"<span style='color: {t['color_warning']}; font-size: 11px;'>Values are theoretical. Run Calibration Wizard to measure real contact Z on your A1 Mini.</span>"
                 )
                 self.lbl_pen_cal_status.setStyleSheet(
-                    "background-color: rgba(245, 158, 11, 0.12); color: #F59E0B; "
+                    f"background-color: rgba(245, 158, 11, 0.12); color: {t['color_warning']}; "
                     "border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 4px; padding: 6px;"
                 )
         self._updating_ui = False
+
+    def refresh_theme(self) -> None:
+        """Refreshes themed tab icons, action button icons, and status banner colors."""
+        t = get_theme_tokens()
+        self.tabs.setTabIcon(0, make_icon("file_svg", size=15))
+        self.tabs.setTabIcon(1, make_icon("cpu", size=15))
+        self.tabs.setTabIcon(2, make_icon("pen_tool", size=15))
+        self.tabs.setTabIcon(3, make_icon("export", size=15))
+        self._btn_open_custom.setIcon(make_icon("folder_open", t["accent_primary"], size=14))
+        self._btn_new_pen.setIcon(make_icon("plus", size=14))
+        self._btn_dup_pen.setIcon(make_icon("copy", size=14))
+        self._btn_cal.setIcon(make_icon("wand", t["accent_contrast"], size=15))
+        self._btn_exp_gcode.setIcon(make_icon("export", t["accent_contrast"], size=15))
+        self._btn_safety.setIcon(make_icon("shield_check", t["accent_primary"], size=15))
+        self._load_pen_into_spinboxes(self.current_pen_profile())
 
     def _on_machine_combo_changed(self) -> None:
         if self._updating_ui:

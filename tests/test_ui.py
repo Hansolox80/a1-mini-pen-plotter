@@ -104,7 +104,9 @@ def test_dialogs_instantiation_and_logic(qapp):
 
     # 3. Settings Dialog
     set_dlg = SettingsDialog(win.settings_manager.settings, win.profile_manager, parent=win)
-    set_dlg.cmb_theme.setCurrentIndex(1)
+    idx_slate = set_dlg.cmb_theme.findData("slate_engineering")
+    assert idx_slate >= 0
+    set_dlg.cmb_theme.setCurrentIndex(idx_slate)
     set_dlg._on_save()
     assert set_dlg.settings.theme == "slate_engineering"
     set_dlg.close()

@@ -6,7 +6,7 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import QSize, Qt, QThreadPool, QTimer
+from PySide6.QtCore import QEvent, QSize, Qt, QThreadPool, QTimer
 from PySide6.QtGui import QAction, QCloseEvent, QIcon, QKeySequence, QUndoStack
 from PySide6.QtWidgets import (
     QApplication,
@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QMainWindow,
     QMenu,
+    QMenuBar,
     QMessageBox,
     QPushButton,
     QSplitter,
@@ -55,8 +56,21 @@ from app.ui.icons import make_icon
 from app.ui.panels.left_sidebar import LeftSidebar
 from app.ui.panels.right_inspector import RightInspectorPanel
 from app.ui.panels.simulator_bar import SimulatorControlBar
-from app.ui.theme import build_stylesheet
+from app.ui.theme import (
+    DEFAULT_DARK_THEME,
+    DEFAULT_LIGHT_THEME,
+    build_palette,
+    build_stylesheet,
+    get_theme_tokens,
+    is_light_theme,
+)
+from app.ui.theme_switch import ThemeModeSwitch
 from app.ui.undo_commands import TransformChangeCommand
+from app.ui.window_chrome import (
+    CustomWindowChrome,
+    FramelessResizeFilter,
+    is_custom_chrome,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +101,17 @@ class MainWindow(QMainWindow):
         self.undo_stack = QUndoStack(self)
         self.undo_stack.setUndoLimit(300)
 
+        # Custom Cross-Platform Window Chrome & Frameless Resize Filter
+        self._menubar = QMenuBar(self)
+        self._is_frameless = False
+        self._resize_filter = FramelessResizeFilter(self)
+        app_inst = QApplication.instance()
+        if app_inst is not None:
+            app_inst.installEventFilter(self._resize_filter)
+        self.window_chrome = CustomWindowChrome(self, self._menubar, self)
+        self.window_chrome.set_window_icon(self.windowIcon())
+        self.setMenuWidget(self.window_chrome)
+
         # Active Project State
         self.project = PlotterProject(
             machine_profile=self.profile_manager.get_default_machine(),
@@ -97,7 +122,7 @@ class MainWindow(QMainWindow):
         self.current_validation = SafetyValidationReport()
         self.current_drawing_bounds = BoundingBox(0, 0, 0, 0)
 
-        # Apply Theme
+        # Apply Theme & Window Chrome
         self.apply_settings(self.settings_manager.settings, initial=True)
 
         # Build UI Layout
@@ -122,6 +147,20 @@ class MainWindow(QMainWindow):
     # ==========================================================================
     # UI Construction
     # ==========================================================================
+
+    def menuBar(self) -> QMenuBar:
+        """Returns the application menu bar hosted inside the custom window chrome."""
+        return self._menubar
+
+    def setWindowTitle(self, title: str) -> None:
+        super().setWindowTitle(title)
+        if hasattr(self, "window_chrome"):
+            self.window_chrome.set_window_title(title)
+
+    def changeEvent(self, event: QEvent) -> None:
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.WindowStateChange and hasattr(self, "window_chrome"):
+            self.window_chrome.sync_window_state()
 
     def _build_menu_bar(self) -> None:
         menubar = self.menuBar()
@@ -207,11 +246,11 @@ class MainWindow(QMainWindow):
         act_fit_safe.triggered.connect(self.action_fit_to_safe_area)
         edit_menu.addAction(act_fit_safe)
 
-        act_resize = QAction(make_icon("resize", size=14), "Resize Drawing...", self)
-        act_resize.setShortcut(QKeySequence("Ctrl+R"))
-        act_resize.setToolTip("Open comprehensive drawing resize & scaling dialog [Ctrl+R]")
-        act_resize.triggered.connect(self.action_open_resize_dialog)
-        edit_menu.addAction(act_resize)
+        self._act_resize = QAction(make_icon("resize", size=14), "Resize Drawing...", self)
+        self._act_resize.setShortcut(QKeySequence("Ctrl+R"))
+        self._act_resize.setToolTip("Open comprehensive drawing resize & scaling dialog [Ctrl+R]")
+        self._act_resize.triggered.connect(self.action_open_resize_dialog)
+        edit_menu.addAction(self._act_resize)
 
         edit_menu.addSeparator()
         act_settings = QAction("Settings...", self)
@@ -231,6 +270,7 @@ class MainWindow(QMainWindow):
 
     def _build_central_ui(self) -> None:
         root = QWidget(self)
+        root.setObjectName("CentralRoot")
         root_layout = QVBoxLayout(root)
         root_layout.setContentsMargins(0, 0, 0, 0)
         root_layout.setSpacing(0)
@@ -247,6 +287,7 @@ class MainWindow(QMainWindow):
 
         # Center area: Build Plate Canvas + Bottom Simulator Control Bar
         center_container = QWidget(splitter)
+        center_container.setObjectName("CenterContainer")
         center_layout = QVBoxLayout(center_container)
         center_layout.setContentsMargins(0, 0, 0, 0)
         center_layout.setSpacing(0)
@@ -300,26 +341,28 @@ class MainWindow(QMainWindow):
 
         hbox.addSpacing(10)
 
+        t = get_theme_tokens()
+
         # Action Buttons
-        btn_new = QPushButton("New Project", bar)
-        btn_new.setIcon(make_icon("file_plus", size=15))
-        btn_new.clicked.connect(self.action_new_project)
-        hbox.addWidget(btn_new)
+        self._btn_new = QPushButton("New Project", bar)
+        self._btn_new.setIcon(make_icon("file_plus", size=15))
+        self._btn_new.clicked.connect(self.action_new_project)
+        hbox.addWidget(self._btn_new)
 
-        btn_open_svg = QPushButton("Open SVG", bar)
-        btn_open_svg.setIcon(make_icon("folder_open", "#22C55E", size=15))
-        btn_open_svg.clicked.connect(self.action_open_svg)
-        hbox.addWidget(btn_open_svg)
+        self._btn_open_svg = QPushButton("Open SVG", bar)
+        self._btn_open_svg.setIcon(make_icon("folder_open", t["accent_primary"], size=15))
+        self._btn_open_svg.clicked.connect(self.action_open_svg)
+        hbox.addWidget(self._btn_open_svg)
 
-        btn_save = QPushButton("Save Project", bar)
-        btn_save.setIcon(make_icon("save", size=15))
-        btn_save.clicked.connect(self.action_save_project)
-        hbox.addWidget(btn_save)
+        self._btn_save = QPushButton("Save Project", bar)
+        self._btn_save.setIcon(make_icon("save", size=15))
+        self._btn_save.clicked.connect(self.action_save_project)
+        hbox.addWidget(self._btn_save)
 
-        sep1 = QFrame(bar)
-        sep1.setFrameShape(QFrame.Shape.VLine)
-        sep1.setStyleSheet("color: #2B313B;")
-        hbox.addWidget(sep1)
+        self._sep1 = QFrame(bar)
+        self._sep1.setFrameShape(QFrame.Shape.VLine)
+        self._sep1.setStyleSheet(f"color: {t['border_subtle']};")
+        hbox.addWidget(self._sep1)
 
         self.btn_undo = QToolButton(bar)
         self.btn_undo.setIcon(make_icon("undo", size=15))
@@ -340,34 +383,40 @@ class MainWindow(QMainWindow):
         hbox.addStretch(1)
 
         # Calibration & Safety Status Buttons
-        btn_cal = QPushButton("Pen Calibration", bar)
-        btn_cal.setIcon(make_icon("wand", "#38BDF8", size=15))
-        btn_cal.clicked.connect(self.action_open_calibration_wizard)
-        hbox.addWidget(btn_cal)
+        self._btn_cal = QPushButton("Pen Calibration", bar)
+        self._btn_cal.setIcon(make_icon("wand", t["color_travel"], size=15))
+        self._btn_cal.clicked.connect(self.action_open_calibration_wizard)
+        hbox.addWidget(self._btn_cal)
 
         self.btn_safety_badge = QPushButton("Safety: Valid", bar)
-        self.btn_safety_badge.setIcon(make_icon("shield_check", "#22C55E", size=15))
+        self.btn_safety_badge.setIcon(make_icon("shield_check", t["accent_primary"], size=15))
         self.btn_safety_badge.clicked.connect(lambda: self.action_open_validation_inspector(0))
         hbox.addWidget(self.btn_safety_badge)
 
         # Primary Export Button with Dropdown Menu
-        btn_export = QPushButton("Export G-Code", bar)
-        btn_export.setObjectName("PrimaryButton")
-        btn_export.setIcon(make_icon("export", "#09110B", size=15))
-        export_menu = QMenu(btn_export)
+        self._btn_export = QPushButton("Export G-Code", bar)
+        self._btn_export.setObjectName("PrimaryButton")
+        self._btn_export.setIcon(make_icon("export", t["accent_contrast"], size=15))
+        export_menu = QMenu(self._btn_export)
         export_menu.addAction("Export Plotter G-Code (.gcode)...", self.action_export_gcode)
         export_menu.addAction("Export Bambu Studio Package (.gcode.3mf)...", self.action_export_3mf)
         export_menu.addSeparator()
         export_menu.addAction("Export Optimized SVG (.svg)...", self.action_export_optimized_svg)
         export_menu.addAction("Export Safety Validation Report (.md)...", self.action_export_report)
         export_menu.addAction("Export Build Plate Preview (.png)...", self.action_export_preview_png)
-        btn_export.setMenu(export_menu)
-        hbox.addWidget(btn_export)
+        self._btn_export.setMenu(export_menu)
+        hbox.addWidget(self._btn_export)
 
-        btn_settings = QPushButton("Settings", bar)
-        btn_settings.setIcon(make_icon("settings", size=15))
-        btn_settings.clicked.connect(self.action_open_settings)
-        hbox.addWidget(btn_settings)
+        # Smooth Dark / Light Theme Mode Switch
+        self.theme_switch = ThemeModeSwitch(is_light=is_light_theme(self.settings_manager.settings.theme), parent=bar)
+        self.theme_switch.toggled_mode.connect(self._on_theme_mode_toggled)
+        self._update_theme_switch_tooltip()
+        hbox.addWidget(self.theme_switch)
+
+        self._btn_settings = QPushButton("Settings", bar)
+        self._btn_settings.setIcon(make_icon("settings", size=15))
+        self._btn_settings.clicked.connect(self.action_open_settings)
+        hbox.addWidget(self._btn_settings)
 
         return bar
 
@@ -400,7 +449,7 @@ class MainWindow(QMainWindow):
         sb.addWidget(self.lbl_st_time)
 
         self.lbl_st_valid = QLabel("  |  Validation: VALID", sb)
-        self.lbl_st_valid.setStyleSheet("color: #4ADE80; font-weight: 700;")
+        self.lbl_st_valid.setStyleSheet(f"color: {get_theme_tokens()['accent_primary']}; font-weight: 700;")
         sb.addPermanentWidget(self.lbl_st_valid)
 
         self.lbl_st_machine = QLabel(f"  |  v{__version__}", sb)
@@ -599,23 +648,24 @@ class MainWindow(QMainWindow):
         self.lbl_st_time.setText(f"  |  Est. Time: {mins:02d}:{secs:02d}")
         self.lbl_st_machine.setText(f"  |  v{__version__}")
 
+        t = get_theme_tokens()
         if rep.overall_status == ValidationSeverity.CRITICAL:
             self.lbl_st_valid.setText(f"  |  Validation: CRITICAL ERROR ({rep.critical_count})")
-            self.lbl_st_valid.setStyleSheet("color: #EF4444; font-weight: 700;")
+            self.lbl_st_valid.setStyleSheet(f"color: {t['color_critical']}; font-weight: 700;")
             self.btn_safety_badge.setText(f"Safety: {rep.critical_count} Critical")
-            self.btn_safety_badge.setIcon(make_icon("shield_alert", "#EF4444", size=15))
-            self.btn_safety_badge.setStyleSheet("border-color: #EF4444; color: #FCA5A5;")
+            self.btn_safety_badge.setIcon(make_icon("shield_alert", t["color_critical"], size=15))
+            self.btn_safety_badge.setStyleSheet(f"border-color: {t['color_critical']}; color: {t['danger_text']};")
         elif rep.overall_status == ValidationSeverity.WARNING:
             self.lbl_st_valid.setText(f"  |  Validation: WARNING ({rep.warning_count})")
-            self.lbl_st_valid.setStyleSheet("color: #F59E0B; font-weight: 700;")
+            self.lbl_st_valid.setStyleSheet(f"color: {t['color_warning']}; font-weight: 700;")
             self.btn_safety_badge.setText(f"Safety: {rep.warning_count} Warning(s)")
-            self.btn_safety_badge.setIcon(make_icon("shield_alert", "#F59E0B", size=15))
-            self.btn_safety_badge.setStyleSheet("border-color: #F59E0B; color: #FDE68A;")
+            self.btn_safety_badge.setIcon(make_icon("shield_alert", t["color_warning"], size=15))
+            self.btn_safety_badge.setStyleSheet(f"border-color: {t['color_warning']}; color: {t['color_warning']};")
         else:
             self.lbl_st_valid.setText("  |  Validation: VALID")
-            self.lbl_st_valid.setStyleSheet("color: #4ADE80; font-weight: 700;")
+            self.lbl_st_valid.setStyleSheet(f"color: {t['accent_primary']}; font-weight: 700;")
             self.btn_safety_badge.setText("Safety: Valid")
-            self.btn_safety_badge.setIcon(make_icon("shield_check", "#22C55E", size=15))
+            self.btn_safety_badge.setIcon(make_icon("shield_check", t["accent_primary"], size=15))
             self.btn_safety_badge.setStyleSheet("")
 
     # ==========================================================================
@@ -1059,10 +1109,95 @@ class MainWindow(QMainWindow):
             self.settings_manager.save(dlg.settings)
             self.apply_settings(dlg.settings, initial=False)
 
-    def apply_settings(self, settings: AppSettings, initial: bool = False) -> None:
+    def _on_theme_mode_toggled(self, is_light: bool) -> None:
+        settings = self.settings_manager.settings
+        current_theme = settings.theme
+        if is_light:
+            if not is_light_theme(current_theme):
+                settings.last_dark_theme = current_theme
+            settings.theme = settings.last_light_theme or DEFAULT_LIGHT_THEME
+        else:
+            if is_light_theme(current_theme):
+                settings.last_light_theme = current_theme
+            settings.theme = settings.last_dark_theme or DEFAULT_DARK_THEME
+        self.settings_manager.save(settings)
+        self._apply_theme(settings.theme)
+
+    def _update_theme_switch_tooltip(self) -> None:
+        if not hasattr(self, "theme_switch"):
+            return
+        t = get_theme_tokens()
+        next_mode = "Dark" if t["is_light"] else "Light"
+        self.theme_switch.setToolTip(
+            f"Theme Mode: {t['category']} ({t['name']})\nClick to switch smoothly to {next_mode} mode"
+        )
+
+    def _apply_theme(self, theme_name: str) -> None:
         app = QApplication.instance()
         if app is not None:
-            app.setStyleSheet(build_stylesheet(settings.theme))
+            app.setPalette(build_palette(theme_name))
+            app.setStyleSheet(build_stylesheet(theme_name))
+        t = get_theme_tokens(theme_name)
+        if hasattr(self, "_act_resize"):
+            self._act_resize.setIcon(make_icon("resize", size=14))
+        if hasattr(self, "_btn_new"):
+            self._btn_new.setIcon(make_icon("file_plus", size=15))
+            self._btn_open_svg.setIcon(make_icon("folder_open", t["accent_primary"], size=15))
+            self._btn_save.setIcon(make_icon("save", size=15))
+            self._sep1.setStyleSheet(f"color: {t['border_subtle']};")
+            self.btn_undo.setIcon(make_icon("undo", size=15))
+            self.btn_redo.setIcon(make_icon("redo", size=15))
+            self._btn_cal.setIcon(make_icon("wand", t["color_travel"], size=15))
+            self._btn_export.setIcon(make_icon("export", t["accent_contrast"], size=15))
+            self._btn_settings.setIcon(make_icon("settings", size=15))
+        if hasattr(self, "theme_switch"):
+            self.theme_switch.set_light_mode(bool(t["is_light"]), animate=True)
+            self._update_theme_switch_tooltip()
+        if hasattr(self, "window_chrome"):
+            self.window_chrome.apply_chrome(self.settings_manager.settings.window_chrome)
+        if hasattr(self, "canvas"):
+            self.canvas.refresh_theme()
+        if hasattr(self, "left_sidebar"):
+            self.left_sidebar.refresh_theme()
+        if hasattr(self, "right_inspector"):
+            self.right_inspector.refresh_theme()
+        if hasattr(self, "simulator_bar"):
+            self.simulator_bar.refresh_theme()
+        if hasattr(self, "lbl_st_valid") and hasattr(self, "btn_safety_badge"):
+            self._update_status_and_safety_badges()
+
+    def _apply_window_chrome(self, chrome_style: str) -> None:
+        want_frameless = is_custom_chrome(chrome_style)
+        if want_frameless != self._is_frameless:
+            was_visible = self.isVisible()
+            was_max = self.isMaximized()
+            normal_geo = self.normalGeometry() if was_max else self.geometry()
+            self._is_frameless = want_frameless
+
+            flags = (
+                Qt.WindowType.Window
+                | Qt.WindowType.WindowMinimizeButtonHint
+                | Qt.WindowType.WindowMaximizeButtonHint
+                | Qt.WindowType.WindowCloseButtonHint
+            )
+            if want_frameless:
+                flags |= Qt.WindowType.FramelessWindowHint
+            self.setWindowFlags(flags)
+            self._resize_filter.set_enabled(want_frameless)
+
+            if was_visible:
+                if was_max:
+                    self.showMaximized()
+                else:
+                    self.setGeometry(normal_geo)
+                    self.show()
+
+        if hasattr(self, "window_chrome"):
+            self.window_chrome.apply_chrome(chrome_style)
+
+    def apply_settings(self, settings: AppSettings, initial: bool = False) -> None:
+        self._apply_theme(settings.theme)
+        self._apply_window_chrome(settings.window_chrome)
         if not initial:
             self.canvas.show_grid = settings.show_grid
             self.canvas.show_rulers = settings.show_rulers
@@ -1094,6 +1229,9 @@ class MainWindow(QMainWindow):
             self.project_manager.clear_autosave()
 
     def closeEvent(self, event: QCloseEvent) -> None:
+        app_inst = QApplication.instance()
+        if app_inst is not None and hasattr(self, "_resize_filter"):
+            app_inst.removeEventFilter(self._resize_filter)
         if self._active_worker is not None:
             self._active_worker.cancel()
         if hasattr(self, "autosave_timer") and self.autosave_timer is not None:

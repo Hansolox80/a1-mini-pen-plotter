@@ -30,6 +30,7 @@ from app.core.models import (
 )
 from app.machine.profiles import PenProfile
 from app.ui.icons import make_icon
+from app.ui.theme import get_theme_tokens
 
 
 class RightInspectorPanel(QFrame):
@@ -62,6 +63,7 @@ class RightInspectorPanel(QFrame):
         scroll = QScrollArea(self)
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.viewport().setAutoFillBackground(False)
 
         content = QWidget()
         vbox = QVBoxLayout(content)
@@ -135,14 +137,10 @@ class RightInspectorPanel(QFrame):
         grid_align.addWidget(btn_fit_safe, 1, 0)
 
         self.btn_resize = QPushButton("Resize...", card)
-        self.btn_resize.setIcon(make_icon("resize", "#38BDF8", 14))
         self.btn_resize.setToolTip(
             "Open comprehensive drawing resize dialog (dimensions, percentage, presets) [Ctrl+R]"
         )
-        self.btn_resize.setStyleSheet(
-            "QPushButton { font-weight: 600; color: #38BDF8; border: 1px solid #0369A1; } "
-            "QPushButton:hover { background-color: #0C4A6E; color: #7DD3FC; border-color: #38BDF8; }"
-        )
+        self.refresh_theme()
         self.btn_resize.clicked.connect(self.resize_requested.emit)
         grid_align.addWidget(self.btn_resize, 1, 1)
 
@@ -152,8 +150,17 @@ class RightInspectorPanel(QFrame):
         self.spn_pos_y.valueChanged.connect(self._on_transform_spin_changed)
         self.spn_width.valueChanged.connect(self._on_width_edited)
         self.spn_height.valueChanged.connect(self._on_height_edited)
-
         return card
+
+    def refresh_theme(self) -> None:
+        """Updates themed icons and accent button styles."""
+        t = get_theme_tokens()
+        travel = t["color_travel"]
+        self.btn_resize.setIcon(make_icon("resize", travel, 14))
+        self.btn_resize.setStyleSheet(
+            f"QPushButton {{ font-weight: 600; color: {travel}; border: 1px solid {travel}; }} "
+            f"QPushButton:hover {{ background-color: {t['bg_surface_hover']}; color: {t['text_primary']}; border-color: {travel}; }}"
+        )
 
     def _build_transform_card(self, parent: QWidget) -> QFrame:
         card = QFrame(parent)

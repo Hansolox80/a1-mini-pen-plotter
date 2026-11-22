@@ -45,6 +45,7 @@ from app.core.simulator import SimulationState
 from app.machine.a1_mini import MachineProfile
 from app.machine.profiles import PenProfile
 from app.ui.icons import make_icon
+from app.ui.theme import get_theme_tokens
 
 
 class CanvasTool(str):
@@ -230,10 +231,10 @@ class BuildPlateCanvas(QWidget):
         self.btn_measure.clicked.connect(lambda: self.set_active_tool(CanvasTool.MEASURE))
         tc_layout.addWidget(self.btn_measure)
 
-        sep1 = QFrame(tool_card)
-        sep1.setFrameShape(QFrame.Shape.VLine)
-        sep1.setStyleSheet("color: #323944;")
-        tc_layout.addWidget(sep1)
+        self._sep1 = QFrame(tool_card)
+        self._sep1.setFrameShape(QFrame.Shape.VLine)
+        self._sep1.setStyleSheet(f"color: {get_theme_tokens()['border_default']};")
+        tc_layout.addWidget(self._sep1)
 
         self.btn_zoom_in = QToolButton(tool_card)
         self.btn_zoom_in.setIcon(make_icon("zoom_in"))
@@ -253,10 +254,10 @@ class BuildPlateCanvas(QWidget):
         self.btn_fit.clicked.connect(self.fit_plate_to_view)
         tc_layout.addWidget(self.btn_fit)
 
-        sep2 = QFrame(tool_card)
-        sep2.setFrameShape(QFrame.Shape.VLine)
-        sep2.setStyleSheet("color: #323944;")
-        tc_layout.addWidget(sep2)
+        self._sep2 = QFrame(tool_card)
+        self._sep2.setFrameShape(QFrame.Shape.VLine)
+        self._sep2.setStyleSheet(f"color: {get_theme_tokens()['border_default']};")
+        tc_layout.addWidget(self._sep2)
 
         self.btn_toggle_grid = QToolButton(tool_card)
         self.btn_toggle_grid.setIcon(make_icon("grid"))
@@ -267,7 +268,7 @@ class BuildPlateCanvas(QWidget):
         tc_layout.addWidget(self.btn_toggle_grid)
 
         self.btn_toggle_travel = QToolButton(tool_card)
-        self.btn_toggle_travel.setIcon(make_icon("route", "#38BDF8"))
+        self.btn_toggle_travel.setIcon(make_icon("route", get_theme_tokens()["color_travel"]))
         self.btn_toggle_travel.setToolTip("Toggle Pen-Up Travel Movements")
         self.btn_toggle_travel.setCheckable(True)
         self.btn_toggle_travel.setChecked(True)
@@ -622,8 +623,29 @@ class BuildPlateCanvas(QWidget):
         self.simulation_active = active
         self.update()
 
+    def refresh_theme(self) -> None:
+        """Invalidates cached pixmaps and updates toolbar icons to match the active theme."""
+        t = get_theme_tokens()
+        self._sep1.setStyleSheet(f"color: {t['border_default']};")
+        self._sep2.setStyleSheet(f"color: {t['border_default']};")
+        self.btn_select.setIcon(make_icon("pointer"))
+        self.btn_resize_tool.setIcon(make_icon("resize"))
+        self.btn_pan.setIcon(make_icon("pan"))
+        self.btn_measure.setIcon(make_icon("ruler"))
+        self.btn_zoom_in.setIcon(make_icon("zoom_in"))
+        self.btn_zoom_out.setIcon(make_icon("zoom_out"))
+        self.btn_fit.setIcon(make_icon("fit_view"))
+        self.btn_toggle_grid.setIcon(make_icon("grid"))
+        self.btn_toggle_travel.setIcon(make_icon("route", t["color_travel"]))
+        self._plate_pixmap = None
+        self._drawing_pixmap = None
+        self._drawing_pixmap_red = None
+        self.update()
+
     def _render_plate_cache(self) -> None:
         """Renders the physical build plate, grid, safety margins, and origin bullseye to a cached QPixmap."""
+        t = get_theme_tokens()
+        is_light = bool(t["is_light"])
         z = self.zoom_px_per_mm
         w_mm = self.machine.nominal_x_mm
         h_mm = self.machine.nominal_y_mm
@@ -647,12 +669,12 @@ class BuildPlateCanvas(QWidget):
         # 1. Drop shadow
         shadow_rect = plate_rect.translated(0, 6)
         p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QColor(0, 0, 0, 110))
+        p.setBrush(QColor(0, 0, 0, 35 if is_light else 110))
         p.drawRoundedRect(shadow_rect, 10.0, 10.0)
 
-        # 2. Textured PEI build plate body
-        p.setPen(QPen(QColor("#38414E"), 2.0))
-        p.setBrush(QColor("#171A20"))
+        # 2. Build plate body
+        p.setPen(QPen(QColor(t["plate_border"]), 2.0))
+        p.setBrush(QColor(t["plate_bg"]))
         p.drawRoundedRect(plate_rect, 8.0, 8.0)
 
         # 3. Front Bambu Lab PEI alignment tab lip
@@ -664,15 +686,15 @@ class BuildPlateCanvas(QWidget):
             tab_w,
             tab_h,
         )
-        p.setPen(QPen(QColor("#38414E"), 1.5))
-        p.setBrush(QColor("#1D222A"))
+        p.setPen(QPen(QColor(t["plate_border"]), 1.5))
+        p.setBrush(QColor(t["plate_tab"]))
         p.drawRoundedRect(tab_rect, 4.0, 4.0)
 
         # 4. Silkscreen branding
         if z >= 1.2:
             font = self._make_ui_font(max(7, min(10, int(z * 2.6))), bold=True)
             p.setFont(font)
-            p.setPen(QColor("#475569"))
+            p.setPen(QColor(t["text_secondary"]))
             p.drawText(
                 tab_rect,
                 Qt.AlignmentFlag.AlignCenter,
@@ -690,17 +712,18 @@ class BuildPlateCanvas(QWidget):
                 self._rebuild_cached_grid()
 
             if z >= 8.0 and self._cached_grid_fine:
-                pen_fine = QPen(QColor(255, 255, 255, 10), 1.0)
+                fine_color = QColor(0, 0, 0, 14) if is_light else QColor(255, 255, 255, 10)
+                pen_fine = QPen(fine_color, 1.0)
                 pen_fine.setCosmetic(True)
                 p.setPen(pen_fine)
                 p.drawLines(self._cached_grid_fine)
 
-            pen_minor = QPen(QColor("#222730"), 1.0)
+            pen_minor = QPen(QColor(t["bg_grid"]), 1.0)
             pen_minor.setCosmetic(True)
             p.setPen(pen_minor)
             p.drawLines(self._cached_grid_minor)
 
-            pen_major = QPen(QColor("#2E3542"), 1.2)
+            pen_major = QPen(QColor(t["bg_grid_major"]), 1.2)
             pen_major.setCosmetic(True)
             p.setPen(pen_major)
             p.drawLines(self._cached_grid_major)
@@ -713,19 +736,23 @@ class BuildPlateCanvas(QWidget):
                 self.machine.usable_width_mm,
                 self.machine.usable_height_mm,
             )
-            pen_safe = QPen(QColor(245, 158, 11, 140), 1.2, Qt.PenStyle.DashLine)
+            warn_c = QColor(t["color_warning"])
+            warn_c.setAlpha(165 if is_light else 140)
+            pen_safe = QPen(warn_c, 1.2, Qt.PenStyle.DashLine)
             pen_safe.setCosmetic(True)
             p.setPen(pen_safe)
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.drawRect(safe_rect)
 
         # Coordinate axes & Origin (0,0) bullseye
-        p.setPen(QPen(QColor("#EF4444"), 2.2))
+        err_c = QColor(t["color_critical"])
+        acc_c = QColor(t["accent_primary"])
+        p.setPen(QPen(err_c, 2.2))
         p.drawLine(QLineF(0.0, 0.0, 25.0, 0.0))
-        p.setPen(QPen(QColor("#22C55E"), 2.2))
+        p.setPen(QPen(acc_c, 2.2))
         p.drawLine(QLineF(0.0, 0.0, 0.0, 25.0))
-        p.setPen(QPen(QColor("#F8FAFC"), 1.5))
-        p.setBrush(QColor("#EF4444"))
+        p.setPen(QPen(QColor(t["text_primary"]), 1.5))
+        p.setBrush(err_c)
         p.drawEllipse(QPointF(0.0, 0.0), 3.0, 3.0)
 
         p.restore()
@@ -734,7 +761,7 @@ class BuildPlateCanvas(QWidget):
         origin_pt = QPointF(pad, pad + h_mm * z)
         font = self._make_mono_font(8, bold=True)
         p.setFont(font)
-        p.setPen(QColor("#94A3B8"))
+        p.setPen(QColor(t["text_secondary"]))
         p.drawText(origin_pt + QPointF(-28, 16), "(0,0)")
 
         # Safe area label
@@ -745,7 +772,9 @@ class BuildPlateCanvas(QWidget):
             safe_screen_rect = QRectF(safe_tl.x(), safe_tl.y(), safe_w, safe_h)
             font_safe = self._make_mono_font(8)
             p.setFont(font_safe)
-            p.setPen(QColor(245, 158, 11, 160))
+            warn_lbl_c = QColor(t["color_warning"])
+            warn_lbl_c.setAlpha(185 if is_light else 160)
+            p.setPen(warn_lbl_c)
             p.drawText(
                 safe_screen_rect.adjusted(6, 4, -6, -4),
                 Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignRight,
@@ -772,15 +801,18 @@ class BuildPlateCanvas(QWidget):
         w_px = max(10, int(math.ceil(b.width * z + pad * 2.0)))
         h_px = max(10, int(math.ceil(b.height * z + pad * 2.0)))
 
+        t = get_theme_tokens()
         stroke_px = max(1.6, self.pen.tip_diameter_mm * z)
 
-        pen_draw_normal = QPen(QColor(self.pen.color_hex or "#22C55E"), stroke_px)
+        pen_draw_normal = QPen(QColor(self.pen.color_hex or t["accent_primary"]), stroke_px)
         pen_draw_normal.setCapStyle(Qt.PenCapStyle.RoundCap)
         use_fast_join = len(self._cached_draw_ok_polys) > 300
         pen_draw_normal.setJoinStyle(Qt.PenJoinStyle.BevelJoin if use_fast_join else Qt.PenJoinStyle.RoundJoin)
         pen_draw_normal.setCosmetic(True)
 
-        pen_travel = QPen(QColor(56, 189, 248, 115), 1.0, Qt.PenStyle.DashLine)
+        travel_c = QColor(t["color_travel"])
+        travel_c.setAlpha(135 if t["is_light"] else 115)
+        pen_travel = QPen(travel_c, 1.0, Qt.PenStyle.DashLine)
         pen_travel.setCapStyle(Qt.PenCapStyle.FlatCap)
         pen_travel.setCosmetic(True)
 
@@ -801,7 +833,7 @@ class BuildPlateCanvas(QWidget):
             p.drawPolyline(poly)
 
         if self._cached_draw_err_lines:
-            pen_err = QPen(QColor("#EF4444"), stroke_px + 0.6)
+            pen_err = QPen(QColor(t["color_critical"]), stroke_px + 0.6)
             pen_err.setCapStyle(Qt.PenCapStyle.FlatCap)
             pen_err.setCosmetic(True)
             p.setPen(pen_err)
@@ -819,12 +851,13 @@ class BuildPlateCanvas(QWidget):
         if self._drawing_pixmap_red is not None:
             return self._drawing_pixmap_red
         # Instant alpha-channel red tint on GPU in 0.05ms (eliminates re-rendering thousands of polylines)
+        t = get_theme_tokens()
         pix_red = QPixmap(self._drawing_pixmap.size())
         pix_red.fill(Qt.GlobalColor.transparent)
         p = QPainter(pix_red)
         p.drawPixmap(0, 0, self._drawing_pixmap)
         p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
-        p.fillRect(pix_red.rect(), QColor("#EF4444"))
+        p.fillRect(pix_red.rect(), QColor(t["color_critical"]))
         p.end()
         self._drawing_pixmap_red = pix_red
         return pix_red
@@ -869,8 +902,9 @@ class BuildPlateCanvas(QWidget):
             painter.end()
             return
 
-        # 1. Dark CAD Backdrop Fill
-        painter.fillRect(self.rect(), QColor("#0E1013"))
+        # 1. CAD Backdrop Fill
+        t = get_theme_tokens()
+        painter.fillRect(self.rect(), QColor(t["bg_canvas"]))
 
         # 2. Draw Build Plate Layer from Cache (PEI bed, drop shadow, grid, safety margins, axes)
         if self._plate_pixmap is None or (self._plate_pixmap_zoom != self.zoom_px_per_mm and not self._is_zooming_interactive):
@@ -973,7 +1007,7 @@ class BuildPlateCanvas(QWidget):
 
         # 5. Highlight individual selected SVG element if any
         if self.selected_element_id and self.transformed_elements:
-            pen_sel = QPen(QColor("#FACC15"), 2.4)
+            pen_sel = QPen(QColor(t["color_selection"]), 2.4)
             pen_sel.setCosmetic(True)
             painter.setPen(pen_sel)
             painter.save()
@@ -1004,6 +1038,7 @@ class BuildPlateCanvas(QWidget):
         painter.end()
 
     def _draw_build_plate(self, painter: QPainter) -> None:
+        t = get_theme_tokens()
         w_mm = self.machine.nominal_x_mm
         h_mm = self.machine.nominal_y_mm
         tl = self.mm_to_screen(0.0, h_mm)
@@ -1013,12 +1048,12 @@ class BuildPlateCanvas(QWidget):
         # Drop shadow
         shadow_rect = plate_rect.translated(0, 6)
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(0, 0, 0, 110))
+        painter.setBrush(QColor(0, 0, 0, 35 if t["is_light"] else 110))
         painter.drawRoundedRect(shadow_rect, 10.0, 10.0)
 
-        # Textured PEI build plate body
-        painter.setPen(QPen(QColor("#38414E"), 2.0))
-        painter.setBrush(QColor("#171A20"))
+        # Build plate body
+        painter.setPen(QPen(QColor(t["plate_border"]), 2.0))
+        painter.setBrush(QColor(t["plate_bg"]))
         painter.drawRoundedRect(plate_rect, 8.0, 8.0)
 
         # Front Bambu Lab PEI alignment tab lip
@@ -1030,15 +1065,15 @@ class BuildPlateCanvas(QWidget):
             tab_w,
             tab_h,
         )
-        painter.setPen(QPen(QColor("#38414E"), 1.5))
-        painter.setBrush(QColor("#1D222A"))
+        painter.setPen(QPen(QColor(t["plate_border"]), 1.5))
+        painter.setBrush(QColor(t["plate_tab"]))
         painter.drawRoundedRect(tab_rect, 4.0, 4.0)
 
         # Plate silkscreen branding label
         if self.zoom_px_per_mm >= 1.2:
             font = self._make_ui_font(max(7, min(10, int(self.zoom_px_per_mm * 2.6))), bold=True)
             painter.setFont(font)
-            painter.setPen(QColor("#475569"))
+            painter.setPen(QColor(t["text_secondary"]))
             painter.drawText(
                 tab_rect,
                 Qt.AlignmentFlag.AlignCenter,
@@ -1049,13 +1084,15 @@ class BuildPlateCanvas(QWidget):
         if not self._cached_grid_minor and not self._cached_grid_major:
             self._rebuild_cached_grid()
 
+        t = get_theme_tokens()
         painter.save()
         painter.translate(self.pan_offset_px.x(), self.height() - self.pan_offset_px.y())
         painter.scale(self.zoom_px_per_mm, -self.zoom_px_per_mm)
 
         # Fine 1mm grid when zoomed in deeply
         if self.zoom_px_per_mm >= 8.0:
-            pen_fine = QPen(QColor(255, 255, 255, 10), 1.0)
+            fine_c = QColor(0, 0, 0, 14) if t["is_light"] else QColor(255, 255, 255, 10)
+            pen_fine = QPen(fine_c, 1.0)
             pen_fine.setCosmetic(True)
             painter.setPen(pen_fine)
             if not self._cached_grid_fine:
@@ -1072,12 +1109,12 @@ class BuildPlateCanvas(QWidget):
                 ]
             painter.drawLines(self._cached_grid_fine)
 
-        pen_minor = QPen(QColor("#222730"), 1.0)
+        pen_minor = QPen(QColor(t["bg_grid"]), 1.0)
         pen_minor.setCosmetic(True)
         painter.setPen(pen_minor)
         painter.drawLines(self._cached_grid_minor)
 
-        pen_major = QPen(QColor("#2E3542"), 1.2)
+        pen_major = QPen(QColor(t["bg_grid_major"]), 1.2)
         pen_major.setCosmetic(True)
         painter.setPen(pen_major)
         painter.drawLines(self._cached_grid_major)
@@ -1085,11 +1122,14 @@ class BuildPlateCanvas(QWidget):
         painter.restore()
 
     def _draw_safety_margins(self, painter: QPainter) -> None:
+        t = get_theme_tokens()
         tl = self.mm_to_screen(self.machine.usable_min_x, self.machine.usable_max_y)
         br = self.mm_to_screen(self.machine.usable_max_x, self.machine.usable_min_y)
         safe_rect = QRectF(tl, br)
 
-        pen_safe = QPen(QColor(245, 158, 11, 140), 1.2, Qt.PenStyle.DashLine)
+        warn_c = QColor(t["color_warning"])
+        warn_c.setAlpha(165 if t["is_light"] else 140)
+        pen_safe = QPen(warn_c, 1.2, Qt.PenStyle.DashLine)
         painter.setPen(pen_safe)
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawRect(safe_rect)
@@ -1097,7 +1137,9 @@ class BuildPlateCanvas(QWidget):
         if self.zoom_px_per_mm >= 1.8:
             font = self._make_mono_font(8)
             painter.setFont(font)
-            painter.setPen(QColor(245, 158, 11, 160))
+            warn_lbl_c = QColor(t["color_warning"])
+            warn_lbl_c.setAlpha(185 if t["is_light"] else 160)
+            painter.setPen(warn_lbl_c)
             painter.drawText(
                 safe_rect.adjusted(6, 4, -6, -4),
                 Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignRight,
@@ -1105,31 +1147,33 @@ class BuildPlateCanvas(QWidget):
             )
 
     def _draw_axes_and_origin(self, painter: QPainter) -> None:
+        t = get_theme_tokens()
         origin_pt = self.mm_to_screen(0.0, 0.0)
         x_end = self.mm_to_screen(25.0, 0.0)
         y_end = self.mm_to_screen(0.0, 25.0)
 
-        # +X Axis (Red)
-        painter.setPen(QPen(QColor("#EF4444"), 2.2))
+        # +X Axis (Error/Red)
+        painter.setPen(QPen(QColor(t["color_critical"]), 2.2))
         painter.drawLine(origin_pt, x_end)
-        # +Y Axis (Green)
-        painter.setPen(QPen(QColor("#22C55E"), 2.2))
+        # +Y Axis (Accent)
+        painter.setPen(QPen(QColor(t["accent_primary"]), 2.2))
         painter.drawLine(origin_pt, y_end)
 
         # Origin (0,0) bullseye
-        painter.setPen(QPen(QColor("#F8FAFC"), 1.5))
-        painter.setBrush(QColor("#EF4444"))
+        painter.setPen(QPen(QColor(t["text_primary"]), 1.5))
+        painter.setBrush(QColor(t["color_critical"]))
         painter.drawEllipse(origin_pt, 5.0, 5.0)
 
         font = self._make_mono_font(8, bold=True)
         painter.setFont(font)
-        painter.setPen(QColor("#94A3B8"))
+        painter.setPen(QColor(t["text_secondary"]))
         painter.drawText(origin_pt + QPointF(-28, 16), "(0,0)")
 
     def _draw_progressive_simulation(self, painter: QPainter) -> None:
         if not self.moves or self.sim_state is None:
             return
 
+        t = get_theme_tokens()
         max_idx = self.sim_state.current_move_index
         prog_in_last = self.sim_state.segment_progress
 
@@ -1142,15 +1186,19 @@ class BuildPlateCanvas(QWidget):
 
         # 1. Dimmed future moves (Vectorized batch draw in C++)
         if draw_count < len(self._sim_draw_lines):
-            pen_future = QPen(QColor(148, 163, 184, 40), 1.2)
+            future_c = QColor(t["text_secondary"])
+            future_c.setAlpha(55 if t["is_light"] else 40)
+            pen_future = QPen(future_c, 1.2)
             pen_future.setCapStyle(Qt.PenCapStyle.FlatCap)
             pen_future.setCosmetic(True)
             painter.setPen(pen_future)
             painter.drawLines(self._sim_draw_lines[draw_count:])
 
         # 2. Completed travel moves
+        travel_c = QColor(t["color_travel"])
+        travel_c.setAlpha(135 if t["is_light"] else 115)
         if self.show_travel_moves and travel_count > 0:
-            pen_travel = QPen(QColor(56, 189, 248, 115), 1.0, Qt.PenStyle.DashLine)
+            pen_travel = QPen(travel_c, 1.0, Qt.PenStyle.DashLine)
             pen_travel.setCapStyle(Qt.PenCapStyle.FlatCap)
             pen_travel.setCosmetic(True)
             painter.setPen(pen_travel)
@@ -1158,7 +1206,7 @@ class BuildPlateCanvas(QWidget):
 
         # 3. Completed draw moves (Vectorized batch draw in C++)
         stroke_px = max(1.6, self.pen.tip_diameter_mm * self.zoom_px_per_mm)
-        pen_draw = QPen(QColor(self.pen.color_hex or "#22C55E"), stroke_px)
+        pen_draw = QPen(QColor(self.pen.color_hex or t["accent_primary"]), stroke_px)
         pen_draw.setCapStyle(Qt.PenCapStyle.RoundCap)
         pen_draw.setJoinStyle(Qt.PenJoinStyle.BevelJoin if draw_count > 300 else Qt.PenJoinStyle.RoundJoin)
         pen_draw.setCosmetic(True)
@@ -1177,7 +1225,7 @@ class BuildPlateCanvas(QWidget):
                 painter.setPen(pen_draw)
                 painter.drawLine(active_line)
             elif mv.move_type == MovementType.TRAVEL and self.show_travel_moves:
-                pen_travel = QPen(QColor(56, 189, 248, 115), 1.0, Qt.PenStyle.DashLine)
+                pen_travel = QPen(travel_c, 1.0, Qt.PenStyle.DashLine)
                 pen_travel.setCapStyle(Qt.PenCapStyle.FlatCap)
                 pen_travel.setCosmetic(True)
                 painter.setPen(pen_travel)
@@ -1224,7 +1272,8 @@ class BuildPlateCanvas(QWidget):
                 ):
                     is_oob_drag = True
 
-            pen_color = QColor("#EF4444") if is_oob_drag else QColor(self.pen.color_hex or "#22C55E")
+            t = get_theme_tokens()
+            pen_color = QColor(t["color_critical"]) if is_oob_drag else QColor(self.pen.color_hex or t["accent_primary"])
             pen_draw_ok = QPen(pen_color, stroke_px)
             pen_draw_ok.setCapStyle(Qt.PenCapStyle.RoundCap)
             pen_draw_ok.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
@@ -1236,8 +1285,9 @@ class BuildPlateCanvas(QWidget):
 
         # 3. Out-of-bounds drawing segments (if any)
         if self._cached_draw_err_lines:
+            t = get_theme_tokens()
             stroke_px = max(1.6, self.pen.tip_diameter_mm * self.zoom_px_per_mm)
-            pen_draw_err = QPen(QColor("#EF4444"), stroke_px + 0.6)
+            pen_draw_err = QPen(QColor(t["color_critical"]), stroke_px + 0.6)
             pen_draw_err.setCapStyle(Qt.PenCapStyle.FlatCap)
             pen_draw_err.setCosmetic(True)
             painter.setPen(pen_draw_err)
@@ -1247,7 +1297,8 @@ class BuildPlateCanvas(QWidget):
 
         # 4. Highlight individual selected SVG element if any
         if self.selected_element_id and self.transformed_elements:
-            pen_sel = QPen(QColor("#FACC15"), 2.4)
+            t = get_theme_tokens()
+            pen_sel = QPen(QColor(t["color_selection"]), 2.4)
             pen_sel.setCosmetic(True)
             painter.setPen(pen_sel)
             painter.save()
@@ -1265,6 +1316,7 @@ class BuildPlateCanvas(QWidget):
         if not self.drawing_bounds.is_valid or (self.drawing_bounds.width == 0 and self.drawing_bounds.height == 0):
             return
 
+        t = get_theme_tokens()
         if self._is_resizing_drawing and self._resize_preview_bounds is not None:
             cur_min_x = self._resize_preview_bounds.min_x
             cur_min_y = self._resize_preview_bounds.min_y
@@ -1291,8 +1343,10 @@ class BuildPlateCanvas(QWidget):
         br = self.mm_to_screen(cur_max_x, cur_min_y)
         box = QRectF(tl, br)
 
-        gizmo_color = QColor("#EF4444") if is_oob else QColor(56, 189, 248, 180)
-        handle_color = QColor("#EF4444") if is_oob else QColor("#38BDF8")
+        sel_c = QColor(t["color_selection"])
+        err_c = QColor(t["color_critical"])
+        gizmo_color = err_c if is_oob else QColor(sel_c.red(), sel_c.green(), sel_c.blue(), 190)
+        handle_color = err_c if is_oob else sel_c
 
         painter.setPen(QPen(gizmo_color, 1.2, Qt.PenStyle.DashLine))
         painter.setBrush(Qt.BrushStyle.NoBrush)
@@ -1309,19 +1363,19 @@ class BuildPlateCanvas(QWidget):
             if name in ("TL", "TR", "BL", "BR"):
                 rect = QRectF(pt.x() - corner_s * 0.5, pt.y() - corner_s * 0.5, corner_s, corner_s)
                 if is_hovered:
-                    painter.setPen(QPen(QColor("#FFFFFF"), 1.8))
-                    painter.setBrush(QColor("#22C55E"))
+                    painter.setPen(QPen(QColor(t["text_primary"]), 1.8))
+                    painter.setBrush(QColor(t["accent_hover"]))
                 else:
-                    painter.setPen(QPen(QColor("#0E1013"), 1.2))
+                    painter.setPen(QPen(QColor(t["bg_window"]), 1.2))
                     painter.setBrush(handle_color)
                 painter.drawRoundedRect(rect, 1.5, 1.5)
             else:
                 rect = QRectF(pt.x() - edge_s * 0.5, pt.y() - edge_s * 0.5, edge_s, edge_s)
                 if is_hovered:
-                    painter.setPen(QPen(QColor("#FFFFFF"), 1.8))
-                    painter.setBrush(QColor("#22C55E"))
+                    painter.setPen(QPen(QColor(t["text_primary"]), 1.8))
+                    painter.setBrush(QColor(t["accent_hover"]))
                 else:
-                    painter.setPen(QPen(QColor("#0E1013"), 1.2))
+                    painter.setPen(QPen(QColor(t["bg_window"]), 1.2))
                     painter.setBrush(QColor(handle_color.red(), handle_color.green(), handle_color.blue(), 180))
                 painter.drawEllipse(rect)
 
@@ -1335,31 +1389,36 @@ class BuildPlateCanvas(QWidget):
         fm = painter.fontMetrics()
         tw = fm.horizontalAdvance(dim_text) + 12
         badge_rect = QRectF(box.center().x() - tw * 0.5, box.bottom() + 6, tw, 18)
+        badge_bg = QColor(t["bg_panel"])
+        badge_bg.setAlpha(230)
         painter.setPen(QPen(handle_color, 1.0))
-        painter.setBrush(QColor(18, 21, 25, 220))
+        painter.setBrush(badge_bg)
         painter.drawRoundedRect(badge_rect, 3.0, 3.0)
-        painter.setPen(QColor("#E2E8F0"))
+        painter.setPen(QColor(t["text_primary"]))
         painter.drawText(badge_rect, Qt.AlignmentFlag.AlignCenter, dim_text)
 
     def _draw_simulator_toolhead(self, painter: QPainter) -> None:
         if self.sim_state is None:
             return
+        t = get_theme_tokens()
         transformer = CoordinateTransformer(machine=self.machine, pen=self.pen)
         px, py = transformer.machine_to_plate_xy(self.sim_state.x, self.sim_state.y)
         pt = self.mm_to_screen(px, py)
 
+        acc_c = QColor(t["accent_primary"])
+        travel_c = QColor(t["color_travel"])
         if self.sim_state.is_pen_down:
-            # Pen Down: Solid green glow
-            painter.setPen(QPen(QColor("#FFFFFF"), 2.0))
-            painter.setBrush(QColor(34, 197, 94, 230))
+            painter.setPen(QPen(QColor(t["text_primary"]), 2.0))
+            painter.setBrush(QColor(acc_c.red(), acc_c.green(), acc_c.blue(), 230))
             painter.drawEllipse(pt, 7.0, 7.0)
-            painter.setPen(QPen(QColor(34, 197, 94, 140), 2.0))
+            painter.setPen(QPen(QColor(acc_c.red(), acc_c.green(), acc_c.blue(), 140), 2.0))
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawEllipse(pt, 12.0, 12.0)
         else:
-            # Pen Up: Cyan hollow ring
-            painter.setPen(QPen(QColor("#38BDF8"), 2.2))
-            painter.setBrush(QColor(14, 16, 19, 200))
+            bg_c = QColor(t["bg_canvas"])
+            bg_c.setAlpha(210)
+            painter.setPen(QPen(travel_c, 2.2))
+            painter.setBrush(bg_c)
             painter.drawEllipse(pt, 7.0, 7.0)
 
         # Toolhead coordinate tag
@@ -1371,23 +1430,27 @@ class BuildPlateCanvas(QWidget):
             fm = painter.fontMetrics()
             tw = fm.horizontalAdvance(tag) + 12
             tag_rect = QRectF(pt.x() + 12, pt.y() - 22, tw, 18)
-            painter.setPen(QPen(QColor("#22C55E" if self.sim_state.is_pen_down else "#38BDF8"), 1.0))
-            painter.setBrush(QColor(18, 21, 25, 230))
+            tag_bg = QColor(t["bg_panel"])
+            tag_bg.setAlpha(235)
+            painter.setPen(QPen(acc_c if self.sim_state.is_pen_down else travel_c, 1.0))
+            painter.setBrush(tag_bg)
             painter.drawRoundedRect(tag_rect, 3.0, 3.0)
-            painter.setPen(QColor("#F8FAFC"))
+            painter.setPen(QColor(t["text_primary"]))
             painter.drawText(tag_rect, Qt.AlignmentFlag.AlignCenter, tag)
 
     def _draw_measurement_overlay(self, painter: QPainter) -> None:
         if not self._measure_start_mm or not self._measure_end_mm:
             return
+        t = get_theme_tokens()
         x0, y0 = self._measure_start_mm
         x1, y1 = self._measure_end_mm
         p0 = self.mm_to_screen(x0, y0)
         p1 = self.mm_to_screen(x1, y1)
 
-        painter.setPen(QPen(QColor("#FACC15"), 2.0, Qt.PenStyle.DashDotLine))
+        measure_c = QColor(t["color_warning"])
+        painter.setPen(QPen(measure_c, 2.0, Qt.PenStyle.DashDotLine))
         painter.drawLine(p0, p1)
-        painter.setBrush(QColor("#FACC15"))
+        painter.setBrush(measure_c)
         painter.drawEllipse(p0, 4.0, 4.0)
         painter.drawEllipse(p1, 4.0, 4.0)
 
@@ -1403,25 +1466,28 @@ class BuildPlateCanvas(QWidget):
         fm = painter.fontMetrics()
         tw = fm.horizontalAdvance(label) + 14
         rect = QRectF(mid.x() - tw * 0.5, mid.y() - 26, tw, 20)
-        painter.setPen(QPen(QColor("#FACC15"), 1.2))
-        painter.setBrush(QColor(18, 21, 25, 240))
+        rect_bg = QColor(t["bg_panel"])
+        rect_bg.setAlpha(240)
+        painter.setPen(QPen(measure_c, 1.2))
+        painter.setBrush(rect_bg)
         painter.drawRoundedRect(rect, 4.0, 4.0)
-        painter.setPen(QColor("#FEF08A"))
+        painter.setPen(QColor(t["text_primary"]))
         painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, label)
 
     def _draw_rulers(self, painter: QPainter) -> None:
+        t = get_theme_tokens()
         rt = self.RULER_THICKNESS
         w = self.width()
         h = self.height()
 
         # Ruler backgrounds
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor("#181B21"))
+        painter.setBrush(QColor(t["ruler_bg"]))
         painter.drawRect(0, 0, w, rt)
         painter.drawRect(0, 0, rt, h)
 
         # Borders
-        painter.setPen(QPen(QColor("#2B313B"), 1.0))
+        painter.setPen(QPen(QColor(t["border_subtle"]), 1.0))
         painter.drawLine(rt, rt, w, rt)
         painter.drawLine(rt, rt, rt, h)
 
@@ -1441,10 +1507,10 @@ class BuildPlateCanvas(QWidget):
                 continue
             is_major = (x_mm % 20 == 0)
             tick_h = 10 if is_major else 5
-            painter.setPen(QColor("#64748B" if is_major else "#475569"))
+            painter.setPen(QColor(t["text_secondary"] if is_major else t["text_muted"]))
             painter.drawLine(int(sx), rt - tick_h, int(sx), rt)
             if is_major:
-                painter.setPen(QColor("#94A3B8"))
+                painter.setPen(QColor(t["text_secondary"]))
                 painter.drawText(int(sx) + 3, rt - 11, f"{x_mm}")
 
         # Left Vertical Ruler (Y mm)
@@ -1460,22 +1526,22 @@ class BuildPlateCanvas(QWidget):
                 continue
             is_major = (y_mm % 20 == 0)
             tick_w = 10 if is_major else 5
-            painter.setPen(QColor("#64748B" if is_major else "#475569"))
+            painter.setPen(QColor(t["text_secondary"] if is_major else t["text_muted"]))
             painter.drawLine(rt - tick_w, int(sy), rt, int(sy))
             if is_major:
-                painter.setPen(QColor("#94A3B8"))
+                painter.setPen(QColor(t["text_secondary"]))
                 painter.drawText(2, int(sy) - 2, f"{y_mm}")
 
         # Corner square
-        painter.setPen(QPen(QColor("#2B313B"), 1.0))
-        painter.setBrush(QColor("#14171C"))
+        painter.setPen(QPen(QColor(t["border_subtle"]), 1.0))
+        painter.setBrush(QColor(t["bg_window"]))
         painter.drawRect(0, 0, rt, rt)
-        painter.setPen(QColor("#22C55E"))
+        painter.setPen(QColor(t["accent_primary"]))
         painter.drawText(QRectF(0, 0, rt, rt), Qt.AlignmentFlag.AlignCenter, "mm")
 
         # Live cursor indicator ticks on rulers
         cur_pt = self.mm_to_screen(self._cursor_mm[0], self._cursor_mm[1])
-        painter.setPen(QPen(QColor("#22C55E"), 1.5))
+        painter.setPen(QPen(QColor(t["accent_primary"]), 1.5))
         if cur_pt.x() >= rt:
             painter.drawLine(int(cur_pt.x()), 0, int(cur_pt.x()), rt)
         if cur_pt.y() >= rt:

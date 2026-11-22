@@ -31,6 +31,7 @@ from app.core.models import BoundingBox, DocumentTransform
 from app.core.platform_utils import get_mono_font_family, get_system_font_family
 from app.machine.a1_mini import MachineProfile
 from app.ui.icons import make_icon
+from app.ui.theme import get_theme_tokens
 
 
 # Standard plotter and paper presets (width_mm, height_mm, label)
@@ -97,14 +98,15 @@ class ResizeDrawingDialog(QDialog):
         hc_layout.setContentsMargins(12, 10, 12, 10)
         hc_layout.setSpacing(12)
 
+        t = get_theme_tokens()
         lbl_icon = QLabel(header_card)
-        lbl_icon.setPixmap(make_icon("resize", "#38BDF8", 28).pixmap(28, 28))
+        lbl_icon.setPixmap(make_icon("resize", t["color_travel"], 28).pixmap(28, 28))
         hc_layout.addWidget(lbl_icon)
 
         v_head = QVBoxLayout()
         v_head.setSpacing(2)
         lbl_title = QLabel("RESIZE & SCALE DRAWING", header_card)
-        lbl_title.setStyleSheet("font-size: 13px; font-weight: 700; color: #F1F5F9; letter-spacing: 0.5px;")
+        lbl_title.setStyleSheet(f"font-size: 13px; font-weight: 700; color: {t['text_primary']}; letter-spacing: 0.5px;")
         v_head.addWidget(lbl_title)
 
         cur_text = (
@@ -310,7 +312,7 @@ class ResizeDrawingDialog(QDialog):
         # Separator line
         sep = QFrame(opt_card)
         sep.setFrameShape(QFrame.Shape.VLine)
-        sep.setStyleSheet("color: #282E37;")
+        sep.setStyleSheet(f"color: {get_theme_tokens()['border_subtle']};")
         oc_layout.addWidget(sep)
 
         # Positioning Checkboxes
@@ -341,9 +343,10 @@ class ResizeDrawingDialog(QDialog):
         pv_layout.setContentsMargins(12, 10, 12, 10)
         pv_layout.setSpacing(4)
 
+        t = get_theme_tokens()
         row_stat = QHBoxLayout()
         self.lbl_new_size = QLabel("New Size: 0.00 × 0.00 mm", self.preview_card)
-        self.lbl_new_size.setStyleSheet("font-weight: 700; color: #F8FAFC;")
+        self.lbl_new_size.setStyleSheet(f"font-weight: 700; color: {t['text_primary']};")
         row_stat.addWidget(self.lbl_new_size)
 
         self.lbl_new_pos = QLabel("Position: X: 0.00 mm, Y: 0.00 mm", self.preview_card)
@@ -360,7 +363,7 @@ class ResizeDrawingDialog(QDialog):
 
         self.lbl_safety_badge = QLabel("✅ FITS INSIDE SAFE AREA", self.preview_card)
         self.lbl_safety_badge.setStyleSheet(
-            "background: #14532D; color: #86EFAC; font-weight: 700; font-size: 11px; padding: 2px 8px; border-radius: 4px;"
+            f"background: {t['badge_bg']}; color: {t['accent_primary']}; font-weight: 700; font-size: 11px; padding: 2px 8px; border-radius: 4px;"
         )
         row_badge.addWidget(self.lbl_safety_badge)
         pv_layout.addLayout(row_badge)
@@ -370,8 +373,9 @@ class ResizeDrawingDialog(QDialog):
         # 5. Dialog Buttons
         btn_box = QDialogButtonBox(self)
         self.btn_apply = QPushButton("Apply Resize", self)
-        self.btn_apply.setIcon(make_icon("resize", "#0F172A", 16))
-        self.btn_apply.setStyleSheet("background: #22C55E; color: #0F172A; font-weight: 700; padding: 6px 18px;")
+        self.btn_apply.setObjectName("PrimaryButton")
+        self.btn_apply.setIcon(make_icon("resize", t["accent_contrast"], 16))
+        self.btn_apply.setStyleSheet("padding: 6px 18px;")
         btn_box.addButton(self.btn_apply, QDialogButtonBox.ButtonRole.AcceptRole)
 
         btn_cancel = QPushButton("Cancel", self)
@@ -514,15 +518,16 @@ class ResizeDrawingDialog(QDialog):
             or (new_t.pos_x_mm + w) > m.usable_max_x
             or (new_t.pos_y_mm + h) > m.usable_max_y
         )
+        t = get_theme_tokens()
         if out_of_bounds:
             self.lbl_safety_badge.setText("⚠️ EXCEEDS SAFE AREA MARGINS")
             self.lbl_safety_badge.setStyleSheet(
-                "background: #7F1D1D; color: #FCA5A5; font-weight: 700; font-size: 11px; padding: 2px 8px; border-radius: 4px;"
+                f"background: {t['danger_bg']}; color: {t['danger_text']}; font-weight: 700; font-size: 11px; padding: 2px 8px; border-radius: 4px;"
             )
         else:
             self.lbl_safety_badge.setText("✅ FITS INSIDE SAFE AREA")
             self.lbl_safety_badge.setStyleSheet(
-                "background: #14532D; color: #86EFAC; font-weight: 700; font-size: 11px; padding: 2px 8px; border-radius: 4px;"
+                f"background: {t['badge_bg']}; color: {t['accent_primary']}; font-weight: 700; font-size: 11px; padding: 2px 8px; border-radius: 4px;"
             )
 
     def result_transform(self) -> DocumentTransform:

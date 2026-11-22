@@ -28,12 +28,30 @@ from PySide6.QtWidgets import (
 from app import __app_name__, __author__, __version__
 from app.core.platform_utils import get_user_app_data_dir
 from app.machine.profiles import ProfileManager
+from app.ui.theme import (
+    DEFAULT_DARK_THEME,
+    DEFAULT_LIGHT_THEME,
+    THEMES,
+    get_theme_tokens,
+    is_light_theme,
+    list_themes,
+)
+from app.ui.window_chrome import (
+    CHROME_STYLES,
+    DEFAULT_CHROME_STYLE,
+    ChromePreviewWidget,
+    get_chrome_style,
+    list_chrome_styles,
+)
 
 
 @dataclass
 class AppSettings:
     """Persistent user preferences across sessions."""
-    theme: str = "graphite_dark"  # "graphite_dark" or "slate_engineering"
+    theme: str = "graphite_dark"
+    last_dark_theme: str = DEFAULT_DARK_THEME
+    last_light_theme: str = DEFAULT_LIGHT_THEME
+    window_chrome: str = DEFAULT_CHROME_STYLE
     default_units: str = "mm"
     default_machine_id: str = "bambu_a1_mini"
     default_pen_id: str = "fineliner_04mm"
@@ -52,8 +70,26 @@ class AppSettings:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> AppSettings:
+        theme = str(data.get("theme", "graphite_dark"))
+        if theme not in THEMES:
+            theme = "graphite_dark"
+        default_dark = theme if not is_light_theme(theme) else DEFAULT_DARK_THEME
+        default_light = theme if is_light_theme(theme) else DEFAULT_LIGHT_THEME
+        last_dark = str(data.get("last_dark_theme", default_dark))
+        if last_dark not in THEMES or is_light_theme(last_dark):
+            last_dark = default_dark
+        last_light = str(data.get("last_light_theme", default_light))
+        if last_light not in THEMES or not is_light_theme(last_light):
+            last_light = default_light
+        window_chrome = str(data.get("window_chrome", DEFAULT_CHROME_STYLE))
+        if window_chrome not in CHROME_STYLES:
+            window_chrome = DEFAULT_CHROME_STYLE
+
         return cls(
-            theme=str(data.get("theme", "graphite_dark")),
+            theme=theme,
+            last_dark_theme=last_dark,
+            last_light_theme=last_light,
+            window_chrome=window_chrome,
             default_units=str(data.get("default_units", "mm")),
             default_machine_id=str(data.get("default_machine_id", "bambu_a1_mini")),
             default_pen_id=str(data.get("default_pen_id", "fineliner_04mm")),
@@ -107,7 +143,7 @@ class SettingsDialog(QDialog):
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle(f"{__app_name__} — Settings")
-        self.resize(560, 440)
+        self.resize(580, 520)
 
         self.settings = AppSettings.from_dict(settings.to_dict())
         self.profile_manager = profile_manager
@@ -144,12 +180,72 @@ class SettingsDialog(QDialog):
         form.setContentsMargins(14, 14, 14, 14)
         form.setSpacing(8)
 
+        theme_box = QVBoxLayout()
+        theme_box.setSpacing(6)
+
+        theme_top = QHBoxLayout()
+        theme_top.setSpacing(6)
+
+        self.cmb_theme_category = QComboBox(page)
+        self.cmb_theme_category.setFixedWidth(96)
+        self.cmb_theme_category.addItem("All", "all")
+        self.cmb_theme_category.addItem("Dark", "dark")
+        self.cmb_theme_category.addItem("Light", "light")
+        self.cmb_theme_category.currentIndexChanged.connect(self._populate_theme_combo)
+        theme_top.addWidget(self.cmb_theme_category)
+
         self.cmb_theme = QComboBox(page)
-        self.cmb_theme.addItem("Graphite Dark (Default CAD Theme)", "graphite_dark")
-        self.cmb_theme.addItem("Slate Engineering Dark", "slate_engineering")
-        idx_t = self.cmb_theme.findData(self.settings.theme)
-        if idx_t >= 0:
-            self.cmb_theme.setCurrentIndex(idx_t)
+        self.cmb_theme.currentIndexChanged.connect(self._update_theme_preview)
+        theme_top.addWidget(self.cmb_theme, 1)
+        theme_box.addLayout(theme_top)
+
+        self.lbl_theme_desc = QLabel(page)
+        self.lbl_theme_desc.setObjectName("MutedLabel")
+        self.lbl_theme_desc.setWordWrap(True)
+        theme_box.addWidget(self.lbl_theme_desc)
+
+        self._swatch_row = QHBoxLayout()
+        self._swatch_row.setSpacing(4)
+        self._swatch_labels: list[QLabel] = []
+        for _ in range(7):
+            sw = QLabel(page)
+            sw.setFixedSize(22, 12)
+            self._swatch_row.addWidget(sw)
+            self._swatch_labels.append(sw)
+        self._swatch_row.addStretch(1)
+        theme_box.addLayout(self._swatch_row)
+
+        self._populate_theme_combo(select_theme=self.settings.theme)
+
+        # Window Chrome Selector (mirroring Theme Selector)
+        chrome_box = QVBoxLayout()
+        chrome_box.setSpacing(6)
+
+        chrome_top = QHBoxLayout()
+        chrome_top.setSpacing(6)
+
+        self.cmb_chrome_category = QComboBox(page)
+        self.cmb_chrome_category.setFixedWidth(96)
+        self.cmb_chrome_category.addItem("All", "all")
+        self.cmb_chrome_category.addItem("Custom", "custom")
+        self.cmb_chrome_category.addItem("Native", "native")
+        self.cmb_chrome_category.currentIndexChanged.connect(self._populate_chrome_combo)
+        chrome_top.addWidget(self.cmb_chrome_category)
+
+        self.cmb_chrome = QComboBox(page)
+        self.cmb_chrome.currentIndexChanged.connect(self._update_chrome_preview)
+        chrome_top.addWidget(self.cmb_chrome, 1)
+        chrome_box.addLayout(chrome_top)
+
+        self.lbl_chrome_desc = QLabel(page)
+        self.lbl_chrome_desc.setObjectName("MutedLabel")
+        self.lbl_chrome_desc.setWordWrap(True)
+        chrome_box.addWidget(self.lbl_chrome_desc)
+
+        self.chrome_preview = ChromePreviewWidget(page)
+        chrome_box.addWidget(self.chrome_preview)
+
+        self._populate_chrome_combo(select_chrome=self.settings.window_chrome)
 
         self.cmb_units = QComboBox(page)
         self.cmb_units.addItem("Millimeters (mm)", "mm")
@@ -179,12 +275,84 @@ class SettingsDialog(QDialog):
         btn_browse.clicked.connect(self._browse_folder)
         folder_row.addWidget(btn_browse)
 
-        form.addRow("UI Appearance:", self.cmb_theme)
+        form.addRow("UI Appearance:", theme_box)
+        form.addRow("Window Chrome:", chrome_box)
         form.addRow("Default Display Units:", self.cmb_units)
         form.addRow("Default Machine Profile:", self.cmb_def_machine)
         form.addRow("Default Pen Profile:", self.cmb_def_pen)
         form.addRow("Default Export Folder:", folder_row)
         return page
+
+    def _populate_theme_combo(self, _index: int = 0, select_theme: Optional[str] = None) -> None:
+        target = select_theme or str(self.cmb_theme.currentData() or self.settings.theme)
+        cat_filter = str(self.cmb_theme_category.currentData() or "all")
+        category_arg = None if cat_filter == "all" else cat_filter
+
+        self.cmb_theme.blockSignals(True)
+        self.cmb_theme.clear()
+        for t in list_themes(category_arg):
+            rec = " (Recommended)" if t.get("recommended") else ""
+            label = f"{t['name']}{rec} — {t['category']}"
+            self.cmb_theme.addItem(label, t["id"])
+
+        idx_t = self.cmb_theme.findData(target)
+        if idx_t >= 0:
+            self.cmb_theme.setCurrentIndex(idx_t)
+        elif self.cmb_theme.count() > 0:
+            self.cmb_theme.setCurrentIndex(0)
+        self.cmb_theme.blockSignals(False)
+        self._update_theme_preview()
+
+    def _update_theme_preview(self) -> None:
+        theme_id = str(self.cmb_theme.currentData() or self.settings.theme)
+        t = get_theme_tokens(theme_id)
+        rec = " • Recommended" if t.get("recommended") else ""
+        self.lbl_theme_desc.setText(f"[{t['category']}{rec}] {t['style_desc']}")
+        swatch_keys = [
+            ("bg_window", "Main Background"),
+            ("bg_panel", "Panel Background"),
+            ("bg_surface", "Elevated Surface"),
+            ("accent_primary", "Accent"),
+            ("bg_canvas", "Canvas"),
+            ("color_selection", "Selection"),
+            ("color_critical", "Error"),
+        ]
+        for lbl, (key, title) in zip(self._swatch_labels, swatch_keys):
+            color_hex = str(t[key])
+            lbl.setStyleSheet(
+                f"background-color: {color_hex}; border: 1px solid {t['border_default']}; border-radius: 3px;"
+            )
+            lbl.setToolTip(f"{title}: {color_hex}")
+        if hasattr(self, "chrome_preview"):
+            self._update_chrome_preview()
+
+    def _populate_chrome_combo(self, _index: int = 0, select_chrome: Optional[str] = None) -> None:
+        target = select_chrome or str(self.cmb_chrome.currentData() or self.settings.window_chrome)
+        cat_filter = str(self.cmb_chrome_category.currentData() or "all")
+        category_arg = None if cat_filter == "all" else cat_filter
+
+        self.cmb_chrome.blockSignals(True)
+        self.cmb_chrome.clear()
+        for c in list_chrome_styles(category_arg):
+            rec = " (Recommended)" if c.get("recommended") else ""
+            label = f"{c['name']}{rec} — {c['category']}"
+            self.cmb_chrome.addItem(label, c["id"])
+
+        idx_c = self.cmb_chrome.findData(target)
+        if idx_c >= 0:
+            self.cmb_chrome.setCurrentIndex(idx_c)
+        elif self.cmb_chrome.count() > 0:
+            self.cmb_chrome.setCurrentIndex(0)
+        self.cmb_chrome.blockSignals(False)
+        self._update_chrome_preview()
+
+    def _update_chrome_preview(self) -> None:
+        chrome_id = str(self.cmb_chrome.currentData() or self.settings.window_chrome)
+        theme_id = str(self.cmb_theme.currentData() or self.settings.theme)
+        c = get_chrome_style(chrome_id)
+        rec = " • Recommended" if c.get("recommended") else ""
+        self.lbl_chrome_desc.setText(f"[{c['category']}{rec}] {c['desc']}")
+        self.chrome_preview.set_preview(chrome_id, theme_id)
 
     def _build_grid_sim_tab(self) -> QWidget:
         page = QFrame()
@@ -263,7 +431,13 @@ class SettingsDialog(QDialog):
             self.edt_export_dir.setText(folder)
 
     def _on_save(self) -> None:
-        self.settings.theme = str(self.cmb_theme.currentData() or "graphite_dark")
+        chosen_theme = str(self.cmb_theme.currentData() or "graphite_dark")
+        self.settings.theme = chosen_theme
+        if is_light_theme(chosen_theme):
+            self.settings.last_light_theme = chosen_theme
+        else:
+            self.settings.last_dark_theme = chosen_theme
+        self.settings.window_chrome = str(self.cmb_chrome.currentData() or DEFAULT_CHROME_STYLE)
         self.settings.default_units = str(self.cmb_units.currentData() or "mm")
         self.settings.default_machine_id = str(self.cmb_def_machine.currentData() or "bambu_a1_mini")
         self.settings.default_pen_id = str(self.cmb_def_pen.currentData() or "fineliner_04mm")
