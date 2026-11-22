@@ -13,7 +13,7 @@ When contributing code or proposals, keep the following principles in mind:
 1. **Physical Machine Safety First**: We never assume printer behavior. Validation must be strict and conservative. Commands that could heat the nozzle on paper (`M104`, `M109`, `M140`, `M190`), engage extrusion (`E`), or trigger unverified physical wipe routines (`M1002`) are strictly prohibited.
 2. **Never Assume Z=0 is Contact**: Physical pen holders extend below the nozzle by variable amounts. The application must treat pen calibration as hardware-dependent and provide clear warnings when unverified.
 3. **Geometric Accuracy**: Coordinates must remain physically accurate within documented tolerances ($< 0.05\text{ mm}$). Curve flattening and transformations must preserve shapes without distortion.
-4. **Professional Native UI/UX**: The interface follows professional CAD/CAM design standards (dark graphite theme, clean typography, 4/8px spacing, and vector icons). Emojis are never used as structural UI icons.
+4. **Professional Native UI/UX**: The interface follows professional CAD/CAM design standards (consistent multi-theme token system across 13 Dark/Light themes, cross-platform custom window chrome, clean typography, 4/8px spacing, and vector icons). Emojis are never used as structural UI icons.
 
 ---
 
@@ -34,29 +34,39 @@ When contributing code or proposals, keep the following principles in mind:
 
 2. **Create and activate a virtual environment:**
    ```powershell
+   # Windows (PowerShell)
    python -m venv .venv
    .\.venv\Scripts\activate
    ```
+   ```bash
+   # Linux / macOS
+   python3 -m venv .venv
+   source .venv/bin/activate
+   ```
 
 3. **Install dependencies:**
-   ```powershell
+   ```bash
    python -m pip install --upgrade pip
    pip install -r requirements.txt
    ```
 
 4. **Generate resources and seed default profiles:**
-   ```powershell
-   python scripts\generate_assets.py
+   ```bash
+   python scripts/generate_assets.py
    ```
 
 5. **Run the test suite:**
-   ```powershell
+   ```bash
+   # Windows / macOS
    pytest -v
+
+   # Linux headless environments
+   QT_QPA_PLATFORM=offscreen pytest -v
    ```
 
 6. **Launch the application:**
-   ```powershell
-   python app\main.py
+   ```bash
+   python app/main.py
    ```
 
 ---
@@ -64,23 +74,33 @@ When contributing code or proposals, keep the following principles in mind:
 ## Project Structure & Architecture
 
 ```text
-A1-Mini-Pen-Plotter/
+a1-mini-pen-plotter/
+├── .github/
+│   ├── ISSUE_TEMPLATE/              # bug_report.md, feature_request.md
+│   ├── PULL_REQUEST_TEMPLATE.md
+│   └── workflows/
+│       └── build_and_test.yml       # Multiplatform CI (Windows, Linux, macOS)
 ├── app/
+│   ├── __init__.py                  # Version & metadata (__version__)
 │   ├── main.py                      # Application entry point & CLI flags
 │   ├── ui/
 │   │   ├── main_window.py           # Main application window & pipeline
 │   │   ├── canvas.py                # 180×180 mm build plate visual workspace
-│   │   ├── theme.py                 # Design tokens & QSS stylesheet
+│   │   ├── theme.py                 # 13 Dark/Light themes, QPalette & QSS
+│   │   ├── theme_switch.py          # Animated Dark/Light toolbar switch
+│   │   ├── window_chrome.py         # Cross-platform custom window chrome
 │   │   ├── icons.py                 # Vector Lucide SVG icon factory
 │   │   ├── undo_commands.py         # QUndoCommand implementations
 │   │   ├── panels/                  # Sidebar, Inspector, Simulator bar
-│   │   └── dialogs/                 # Wizard, Validator, Settings
+│   │   └── dialogs/                 # Wizard, Validator, Resize, Settings
 │   ├── core/
 │   │   ├── models.py                # Dataclasses & types
 │   │   ├── svg_parser.py            # SVG parser & matrix transforms
 │   │   ├── coordinate_system.py     # Y-axis inversion & plate mapping
 │   │   ├── geometry.py              # Curves, hatching, contours
 │   │   ├── path_optimizer.py        # Nearest-Neighbor & 2-Opt optimizer
+│   │   ├── pipeline_worker.py       # Background QRunnable pipeline worker
+│   │   ├── platform_utils.py        # OS-agnostic paths & system fonts
 │   │   ├── gcode_generator.py       # G-code generation & templates
 │   │   └── simulator.py             # Playback state engine
 │   ├── machine/
@@ -92,13 +112,19 @@ A1-Mini-Pen-Plotter/
 │   │   └── project_exporter.py      # .a1plot project format
 │   └── resources/                   # Vector logo and multi-size icon.ico
 ├── profiles/                        # Default machine and pen JSON files
-├── examples/                        # Test SVG suite (11 files)
-├── tests/                           # Unit & UI automated tests
-├── docs/                            # Documentation & screenshots
+├── examples/                        # Test SVG suite (11 files) & sample output
+├── tests/                           # 65 unit, fuzzing, stress, theme & UI tests
+├── docs/                            # Architecture docs & screenshots
 ├── scripts/                         # Build, release, and helper scripts
+├── CHANGELOG.md
+├── CONTRIBUTING.md
+├── SECURITY.md
+├── pytest.ini
 ├── requirements.txt
 ├── A1_Mini_Pen_Plotter.spec
-└── build_windows.bat
+├── build_windows.bat
+├── build_linux.sh
+└── build_macos.sh
 ```
 
 ---
@@ -114,38 +140,43 @@ A1-Mini-Pen-Plotter/
 
 ## Testing Guidelines
 
-Any contribution that modifies geometry conversion, SVG parsing, G-code generation, or safety validation **must** include automated tests in `tests/`:
+Any contribution that modifies geometry conversion, SVG parsing, G-code generation, themes/window chrome, or safety validation **must** include automated tests in `tests/`:
 
 - Run all automated tests:
-  ```powershell
+  ```bash
+  # Windows / macOS
   pytest -v
+
+  # Linux headless environments
+  QT_QPA_PLATFORM=offscreen pytest -v
   ```
 - If adding support for new SVG elements, add an appropriate test case verifying geometric dimensions in `tests/test_engine.py`.
-- If modifying UI interactions, update or add tests in `tests/test_ui.py`.
+- If modifying UI interactions, update or add tests in `tests/test_ui.py` or `tests/test_themes.py`.
+- Clearly distinguish automated software tests (`pytest` / CI) from physical Bambu Lab A1 Mini printer verification in your PR description; never claim physical hardware testing unless performed on real hardware.
 
 ---
 
 ## Submitting Pull Requests
 
 1. **Create a descriptive feature branch:**
-   ```powershell
+   ```bash
    git checkout -b feature/hatch-angle-presets
    ```
 2. **Commit your changes with clear, concise messages:**
-   ```powershell
+   ```bash
    git commit -m "feat(fill): add preset selector for common hatching angles"
    ```
-3. **Verify the complete build pipeline:**
-   Run `build_windows.bat` or ensure all 20+ tests pass with zero warnings:
-   ```powershell
+3. **Verify the complete build & test pipeline:**
+   Run the automated test suite (currently **65 automated tests**) and, if modifying packaging or UI, run the platform build script (`build_windows.bat`, `./build_linux.sh`, or `./build_macos.sh`):
+   ```bash
    pytest -v
    ```
 4. **Push to your fork and submit a Pull Request** against the `main` branch.
-5. Fill out the Pull Request template completely, detailing what was changed and how it was tested.
+5. Fill out the [Pull Request template](.github/PULL_REQUEST_TEMPLATE.md) completely, detailing what was changed and how it was tested.
 
 ---
 
 ## Reporting Issues
 
-- **Bug Reports**: Use the [Bug Report template](.github/ISSUE_TEMPLATE/bug_report.md). Include the SVG file that caused the issue, your machine and pen profile settings, and the exact error output or log file from `%USERPROFILE%\.a1_mini_pen_plotter\logs\`.
+- **Bug Reports**: Use the [Bug Report template](.github/ISSUE_TEMPLATE/bug_report.md). Include the SVG file that caused the issue, your machine and pen profile settings, and the exact error output or log file from `%USERPROFILE%\.a1_mini_pen_plotter\logs\` (Windows) or `~/.a1_mini_pen_plotter/logs/` (Linux/macOS).
 - **Feature Requests**: Use the [Feature Request template](.github/ISSUE_TEMPLATE/feature_request.md). Explain the physical or workflow rationale behind the proposed feature.

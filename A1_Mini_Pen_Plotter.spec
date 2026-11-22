@@ -2,10 +2,15 @@
 """PyInstaller specification for A1 Mini Pen Plotter cross-platform distribution (Windows, Linux, macOS)."""
 
 from pathlib import Path
+import re
 import sys
 
 block_cipher = None
 project_root = Path(SPECPATH)
+
+_init_text = (project_root / "app" / "__init__.py").read_text(encoding="utf-8")
+_ver_match = re.search(r'__version__\s*=\s*["\']([^"\']+)["\']', _init_text)
+app_version = _ver_match.group(1) if _ver_match else "3.11.3"
 
 is_windows = sys.platform.startswith("win")
 is_macos = sys.platform == "darwin"
@@ -123,8 +128,8 @@ if is_macos:
         icon=icon_file,
         bundle_identifier="com.a1mini.penplotter",
         info_plist={
-            "CFBundleShortVersionString": "3.11.2",
-            "CFBundleVersion": "3.11.2",
+            "CFBundleShortVersionString": app_version,
+            "CFBundleVersion": app_version,
             "NSHighResolutionCapable": "True",
             "LSMinimumSystemVersion": "10.15",
         },

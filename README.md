@@ -56,8 +56,9 @@
   - [Option B: Running from Source (Python 3.12+)](#option-b-running-from-source-python-312)
 - [Step-by-Step Pen Calibration Guide](#step-by-step-pen-calibration-guide)
 - [Bambu Lab A1 Mini Compatibility Matrix](#bambu-lab-a1-mini-compatibility-matrix)
-- [Building the Windows Executable](#building-the-windows-executable)
+- [Building Standalone Executables](#building-standalone-executables)
 - [Running Automated Tests](#running-automated-tests)
+- [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
 - [License & Credits](#license--credits)
 
@@ -169,32 +170,33 @@ Before any execution-ready file can be exported, the mandatory validation engine
 ## Installation
 
 ### Option A: Standalone Binary Packages (Recommended)
-No Python installation required. Download pre-compiled standalone packages directly from [GitHub Releases](https://github.com/Hansolox80/a1-mini-pen-plotter/releases/tag/v3.11.2):
+No Python installation required. Download pre-compiled standalone packages directly from [GitHub Releases](https://github.com/Hansolox80/a1-mini-pen-plotter/releases/tag/v3.11.3):
 
 #### 📦 Official Release Binaries & Verification
 
 | Asset | Platform | Architecture | Description |
 | :--- | :--- | :--- | :--- |
-| **`A1-Mini-Pen-Plotter-v3.11.2-windows-x64.zip`** | Windows 10/11 | x64 | Portable Windows standalone (extract and run) |
-| **`A1-Mini-Pen-Plotter-v3.11.2-linux-x64.tar.gz`** | Linux (Ubuntu/Debian/Fedora) | x64 | Standalone Linux binary distribution archive |
-| **`A1-Mini-Pen-Plotter-v3.11.2-macos-arm64.dmg`** | macOS 12+ (Monterey, Sonoma, Sequoia) | Apple Silicon (M1/M2/M3/M4) | Drag-and-drop macOS disk image installer |
-| **`A1-Mini-Pen-Plotter-v3.11.2-macos-arm64.zip`** | macOS 12+ (Monterey, Sonoma, Sequoia) | Apple Silicon (M1/M2/M3/M4) | Compressed `.app` application bundle |
+| **`A1-Mini-Pen-Plotter-v3.11.3-windows-x64.zip`** | Windows 10/11 | x64 | Portable Windows standalone (extract and run) |
+| **`A1-Mini-Pen-Plotter-v3.11.3-linux-x64.tar.gz`** | Linux (Ubuntu/Debian/Fedora) | x64 | Standalone Linux binary distribution archive |
+| **`A1-Mini-Pen-Plotter-v3.11.3-macos-arm64.dmg`** | macOS 12+ (Monterey, Sonoma, Sequoia) | Apple Silicon (M1/M2/M3/M4) | Drag-and-drop macOS disk image installer |
+| **`A1-Mini-Pen-Plotter-v3.11.3-macos-arm64.zip`** | macOS 12+ (Monterey, Sonoma, Sequoia) | Apple Silicon (M1/M2/M3/M4) | Compressed `.app` application bundle |
 | **`SHA256SUMS.txt`** | All | Multi | Official SHA-256 integrity checksums |
 
 #### 🚀 Quick Launch by OS:
 
 * **Windows (x64)**:
-  1. Download `A1-Mini-Pen-Plotter-v3.11.2-windows-x64.zip`.
-  2. Extract the archive and double-click **`A1 Mini Pen Plotter.exe`**.
+  1. Download `A1-Mini-Pen-Plotter-v3.11.3-windows-x64.zip` (verify checksum against `SHA256SUMS.txt` if desired).
+  2. Extract the archive, open the extracted `A1 Mini Pen Plotter` folder, and double-click **`A1 Mini Pen Plotter.exe`**.
   3. *(Optional)* Run `scripts\install_windows.ps1` to create Desktop & Start Menu shortcuts.
 * **Linux (x64)**:
-  1. Download `A1-Mini-Pen-Plotter-v3.11.2-linux-x64.tar.gz`.
-  2. Extract the archive: `tar -xzf A1-Mini-Pen-Plotter-v3.11.2-linux-x64.tar.gz`.
-  3. Run: `./A1\ Mini\ Pen\ Plotter/A1\ Mini\ Pen\ Plotter`.
+  1. Download `A1-Mini-Pen-Plotter-v3.11.3-linux-x64.tar.gz`.
+  2. Extract the archive: `tar -xzf A1-Mini-Pen-Plotter-v3.11.3-linux-x64.tar.gz`.
+  3. Ensure executable permissions if needed (`chmod +x "./A1 Mini Pen Plotter/A1 Mini Pen Plotter"`) and run: `./A1\ Mini\ Pen\ Plotter/A1\ Mini\ Pen\ Plotter`.
 * **macOS (Apple Silicon M1/M2/M3/M4)**:
-  1. Download `A1-Mini-Pen-Plotter-v3.11.2-macos-arm64.dmg`.
+  1. Download `A1-Mini-Pen-Plotter-v3.11.3-macos-arm64.dmg`.
   2. Open the disk image and drag **`A1 Mini Pen Plotter.app`** to your **Applications** folder.
-  3. *(Alternative)* Download `A1-Mini-Pen-Plotter-v3.11.2-macos-arm64.zip`, extract, and launch.
+  3. *(Alternative)* Download `A1-Mini-Pen-Plotter-v3.11.3-macos-arm64.zip`, extract, and launch.
+  4. *First launch on unsigned builds:* Right-click `A1 Mini Pen Plotter.app` → **Open** (or allow via **System Settings → Privacy & Security**).
 
 ### Option B: Running from Source (Python 3.12+)
 
@@ -266,35 +268,41 @@ The application includes an interactive **6-Step Pen Calibration Wizard** access
 
 ---
 
-## Building the Windows Executable
+## Building Standalone Executables
 
-The project includes an automated build pipeline script (`build_windows.bat`) that verifies all dependencies, runs automated tests, and packages the standalone distribution using PyInstaller:
+The project includes automated build scripts that verify dependencies, run the automated test suite, and package standalone distributions using PyInstaller:
 
-```cmd
 ### Building for Windows, Linux, and macOS
 
 * **Windows**: Run `build_windows.bat` (bundles `dist\A1 Mini Pen Plotter\A1 Mini Pen Plotter.exe`).
-* **Linux**: Run `chmod +x build_linux.sh && ./build_linux.sh` (bundles standalone binary and tarball).
-* **macOS**: Run `chmod +x build_macos.sh && ./build_macos.sh` (bundles `.app` bundle and `.dmg`).
+* **Linux**: Run `chmod +x build_linux.sh && ./build_linux.sh` (bundles standalone binary and `.tar.gz` archive).
+* **macOS**: Run `chmod +x build_macos.sh && ./build_macos.sh` (bundles `.app` bundle, `.zip`, and `.dmg`).
 
-### Packaging a GitHub Release Archive
+### Packaging a GitHub Release Archive (Windows)
 To generate a release `.zip` with SHA-256 and MD5 checksums ready for GitHub Releases:
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\package_release.ps1
 ```
-Output: `dist\A1-Mini-Pen-Plotter-v3.11.2-windows-x64.zip`.
+Output: `dist\A1-Mini-Pen-Plotter-v3.11.3-windows-x64.zip`.
 
 ---
 
 ## Running Automated Tests
 
-A comprehensive test suite of 56 unit, safety, fuzzing, concurrency, stress, and UI integration tests is provided in [`tests/`](tests/):
+A comprehensive test suite of **65 automated software tests** across 7 test modules (unit, geometry, fuzzing, concurrency, stress, themes/window chrome, and headless UI integration) is provided in [`tests/`](tests/):
 
-```powershell
+```bash
+# Windows / macOS
 pytest -v
+
+# Linux headless environments
+QT_QPA_PLATFORM=offscreen pytest -v
 ```
 
-Full technical report and QA findings available in [`BUG_HUNT_LOG.md`](BUG_HUNT_LOG.md).
+> [!NOTE]
+> **Automated Software Tests vs. Physical Printer Testing:** The `pytest` suite and GitHub Actions CI matrix (`windows-latest`, `ubuntu-latest`, `macos-latest`) validate SVG parsing, geometry, G-code generation, safety validation rules, and headless UI behavior in software. They do **not** execute G-code on a physical Bambu Lab A1 Mini. Always run the [6-Step Pen Calibration Wizard](#step-by-step-pen-calibration-guide) and perform an **Air Draw** dry run before plotting on real hardware.
+
+Full technical report and QA findings are available in [`BUG_HUNT_LOG.md`](BUG_HUNT_LOG.md).
 
 ### Verified Test Cases:
 - **Square Dimensions**: Physical $20 \times 20\text{ mm}$ square toolpath within $0.001\text{ mm}$ tolerance.
@@ -308,7 +316,18 @@ Full technical report and QA findings available in [`BUG_HUNT_LOG.md`](BUG_HUNT_
 - **Negative Coordinates**: Immediate detection and critical safety blocking.
 - **Oversized Documents**: Documents exceeding $180 \times 180\text{ mm}$ rejected by safety validator.
 - **Imperial Units**: $1\text{ in} \times 1\text{ in}$ square accurately converted to $25.40 \times 25.40\text{ mm}$.
+- **Themes & Window Chrome**: All 13 themes, `QPalette` generation, Dark/Light toolbar switch, and 8 cross-platform window chrome modes.
 - **UI Integration**: MainWindow, Canvas, Simulator, Undo/Redo stack, Interactive Corner Resize Tool, and Dialog logic.
+
+---
+
+## Troubleshooting
+
+- **Export blocked with "Pen is not physically calibrated"**: By design, default pen profiles have `is_calibrated = false` to prevent bed crashes. Complete **Pen Calibration** (6-Step Wizard) or enable **Air Draw Mode** in the Export tab for dry-run testing.
+- **Windows SmartScreen prompt on first launch**: Unsigned standalone binaries may trigger a SmartScreen warning. Click **More info → Run anyway** after verifying the archive hash against `SHA256SUMS.txt`.
+- **Linux missing Qt/XCB or OpenGL libraries**: If the standalone binary or `pytest` fails to load the Qt platform plugin, install standard Qt6 X11/OpenGL runtime libraries (e.g., on Ubuntu/Debian: `libgl1 libegl1 libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xfixes0 libxcb-xinerama0`). For headless execution, set `QT_QPA_PLATFORM=offscreen`.
+- **macOS Gatekeeper warning ("cannot be opened because the developer cannot be verified")**: Right-click `A1 Mini Pen Plotter.app` and select **Open**, or allow it under **System Settings → Privacy & Security**.
+- **Logs & Settings location**: Application logs and user preferences (`settings.json`) are stored in `%USERPROFILE%\.a1_mini_pen_plotter\` on Windows and `~/.a1_mini_pen_plotter/` on Linux/macOS.
 
 ---
 

@@ -16,7 +16,20 @@ if (-not (Test-Path $ExePath)) {
 }
 
 $VersionMatch = Select-String -Path (Join-Path $ProjectRoot "app\__init__.py") -Pattern '__version__\s*=\s*["'']([^"'']+)["'']'
-$AppVersion = if ($VersionMatch -and $VersionMatch.Matches.Groups.Count -gt 1) { $VersionMatch.Matches.Groups[1].Value } else { "2.10.2" }
+$AppVersion = if ($VersionMatch -and $VersionMatch.Matches.Groups.Count -gt 1) { $VersionMatch.Matches.Groups[1].Value } else { "3.11.3" }
+
+# Ensure portable top-level profiles exist alongside the executable (resources and examples remain bundled in _internal)
+$ProfilesSrc = Join-Path $ProjectRoot "profiles"
+$ProfilesDst = Join-Path $AppDir "profiles"
+if ((Test-Path $ProfilesSrc) -and -not (Test-Path $ProfilesDst)) {
+    Copy-Item -Path $ProfilesSrc -Destination $ProfilesDst -Recurse -Force
+}
+
+# Remove any temporary smoke-test screenshot if present inside dist
+$SmokeShot = Join-Path $AppDir "resources\exe_verified.png"
+if (Test-Path $SmokeShot) {
+    Remove-Item -Path $SmokeShot -Force
+}
 
 $ZipName = "A1-Mini-Pen-Plotter-v$AppVersion-windows-x64.zip"
 $ZipPath = Join-Path $DistDir $ZipName
@@ -26,7 +39,7 @@ if (Test-Path $ZipPath) {
 }
 
 Write-Host "Creating release archive: $ZipPath ..."
-Compress-Archive -Path "$AppDir\*" -DestinationPath $ZipPath -CompressionLevel Optimal
+Compress-Archive -Path $AppDir -DestinationPath $ZipPath -CompressionLevel Optimal
 
 $sha256 = (Get-FileHash -Path $ZipPath -Algorithm SHA256).Hash
 $md5 = (Get-FileHash -Path $ZipPath -Algorithm MD5).Hash

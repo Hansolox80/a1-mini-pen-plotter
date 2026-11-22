@@ -54,13 +54,9 @@ if errorlevel 1 (
     exit /b 1
 )
 
-:: Populate top-level resources, profiles, and examples inside dist\A1 Mini Pen Plotter\
-if not exist "dist\A1 Mini Pen Plotter\resources" mkdir "dist\A1 Mini Pen Plotter\resources"
-xcopy /Y /E /Q "app\resources\*" "dist\A1 Mini Pen Plotter\resources\" >nul
+:: Populate portable top-level profiles\ inside dist\A1 Mini Pen Plotter\ (resources and examples are bundled in _internal\)
 if not exist "dist\A1 Mini Pen Plotter\profiles" mkdir "dist\A1 Mini Pen Plotter\profiles"
 xcopy /Y /E /Q "profiles\*" "dist\A1 Mini Pen Plotter\profiles\" >nul
-if not exist "dist\A1 Mini Pen Plotter\examples" mkdir "dist\A1 Mini Pen Plotter\examples"
-xcopy /Y /E /Q "examples\*" "dist\A1 Mini Pen Plotter\examples\" >nul
 
 :: Step 5: Verify output structure and executable startup
 echo.
@@ -73,14 +69,14 @@ if not exist "dist\A1 Mini Pen Plotter\_internal" (
     echo ERROR: Directory "dist\A1 Mini Pen Plotter\_internal" was not found!
     exit /b 1
 )
-if not exist "dist\A1 Mini Pen Plotter\resources\icon.ico" (
-    echo ERROR: Directory "dist\A1 Mini Pen Plotter\resources" is incomplete!
+if not exist "dist\A1 Mini Pen Plotter\_internal\app\resources\icon.ico" (
+    echo ERROR: Bundled resources inside "_internal\app\resources" are incomplete!
     exit /b 1
 )
 
-:: Smoke-test the compiled .exe by rendering a verification screenshot
-"dist\A1 Mini Pen Plotter\A1 Mini Pen Plotter.exe" --screenshot "dist\A1 Mini Pen Plotter\resources\exe_verified.png"
-if not exist "dist\A1 Mini Pen Plotter\resources\exe_verified.png" (
+:: Smoke-test the compiled .exe by rendering a verification screenshot outside dist\
+"dist\A1 Mini Pen Plotter\A1 Mini Pen Plotter.exe" --screenshot "build\exe_verified.png"
+if not exist "build\exe_verified.png" (
     echo ERROR: Compiled executable smoke test did not produce verification image!
     exit /b 1
 )

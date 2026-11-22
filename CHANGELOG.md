@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.11.3] - 2026-11-22
+
+### Added
+- **Theme Collection (`app/ui/theme.py`)**: Added 11 new themes alongside classic `Graphite Dark` and `Slate Engineering`:
+  - **Dark**: `Emerald Matrix` *(Recommended)*, `Arctic Blue`, `Industrial Amber`, `Crimson Night`, `Deep Ocean`, `Phosphor CRT`, `Midnight Purple`, and `Slate Steel`.
+  - **Light**: `Warm Paper`, `Platinum`, and `Solarized Light`.
+- **Recommended Theme Selector (`app/ui/dialogs/settings_dialog.py`)**: Added `All` / `Dark` / `Light` category filtering, theme descriptions, and live color swatch previews in **Settings → Appearance & Defaults**.
+- **Smooth Dark / Light Mode Toggle Switch (`app/ui/theme_switch.py`)**: Added an animated `ThemeModeSwitch` in the top toolbar to toggle between the user's last-used Dark and Light themes (`last_dark_theme` / `last_light_theme` in `AppSettings`) without recomputing toolpaths.
+- **Cross-Platform Custom Window Chrome (`app/ui/window_chrome.py`)**: Added 8 selectable window chrome designs (`Minimal Flat` *(Recommended)*, `Modern Pill Close`, `Capsule Control Tiles`, `macOS Traffic Lights`, `CAD Unified Studio`, `Accent Edge Strip`, `Soft Circular Floating`, and `System Native OS Frame`) with live preview in Settings, vector-painted window controls, double-click maximize/restore, and 8-edge resize support across Windows, macOS, and Linux.
+- **Automated Theme & Chrome Tests (`tests/test_themes.py`)**: Expanded automated test suite from 56 to **65 tests** covering theme token definitions, `build_palette`, QSS generation, Dark/Light switch behavior, and all 8 window chrome styles.
+
+### Changed
+- **Theme-Aware Canvas, Icons & Panels**: Wired `BuildPlateCanvas`, `make_icon`, `LeftSidebar`, `RightInspectorPanel`, `SimulatorControlBar`, and `ResizeDrawingDialog` to refresh dynamically from semantic theme tokens (`get_theme_tokens`).
+
+### Fixed
+- **Windows 11 Light App Mode Menu Visibility ([#1](https://github.com/Hansolox80/a1-mini-pen-plotter/issues/1))**: Added explicit `QMenuBar` and `QMenu` styling so menu bar items and dropdown menus follow the active application theme regardless of OS Light/Dark mode (reported and fix proposed by [@Wonderer643](https://github.com/Wonderer643)).
+- **OS Palette & Scrollbar White Bleed-Through**: Added `build_palette()` (`app.setPalette(...)`) and explicit QSS rules for `QScrollArea`, `QScrollBar::add-page`/`sub-page`, `QTabWidget`, `QTabBar`, `QSplitter`, and `QToolTip` to eliminate light-mode background bleed-through when switching themes.
+
+---
+
+## [3.11.2] - 2026-11-04
+
+### Added
+- **Universal Infill Generation**: Decoupled infill generation from SVG CSS fill tags so closed vector shapes, strokes, and multi-polygons support linear hatching (single & cross-hatch) and concentric contours in both canvas preview and G-code output.
+- **Calibrated Profile Auto-Default & Frozen Path Resolution**: Automatically selects the calibrated physical pen profile on startup and resolves portable `profiles/` alongside PyInstaller executables.
+- **UI Version Identifier & Expanded Tests**: Added `| v3.11.2` status bar identifier and expanded automated tests to **56 passing tests**.
+
+### Fixed
+- **Plate Centering & Zero Y-Offset Drift**: Removed fixed `-22 mm` offset from centering computations so drawings align to the physical $180 \times 180\text{ mm}$ Bambu Lab A1 Mini build plate center without out-of-bounds drift.
+
+---
+
+## [3.10.2] - 2026-11-01
+
+### Changed & Performance
+- **Continuous GPU Texture Scaling**: Wheel zoom scales cached high-DPI Pixmap textures during active scrolling with a 100 ms vector re-rasterization debounce.
+- **Zero-Allocation Simulation Playback**: Pre-vectorized trajectory buffers (`_sim_draw_lines`, `_sim_travel_lines`) dispatched via batched `QPainter.drawLines()` without per-frame Python allocations.
+- **Lazy Out-of-Bounds Alpha Tinting**: Generates red OOB drawing pixmap on demand via GPU `CompositionMode_SourceIn`.
+- **Adaptive Rendering & Tree Throttling**: Automatically uses `BevelJoin` for dense drawings (`> 300` polylines), caches simulator bar style updates, keeps dense layer trees (`> 500` paths) collapsed on import, and restricts ruler hover repaints to ruler regions.
+
+---
+
+## [2.10.2] - 2026-10-31
+
+### Added
+- **2-Layer GPU Pixmap Blitting Engine**: Isolated drawing rasterization into offscreen cached pixmaps with `QPainter::translate` during interactive canvas dragging and throttled inspector updates.
+- **Interactive Corner & Edge Resize Tool (`app/ui/canvas.py`)**: Added 8 interactive handles (4 corners + 4 edge midpoints), proportional/freeform mode selector with `Shift`-key inversion, live dimension HUD, and atomic undo/redo (`TransformChangeCommand`).
+- **Advanced Drawing Resize Dialog (`app/ui/dialogs/resize_dialog.py`)**: Added multi-tab resize dialog supporting absolute millimeter dimensions, percentage scaling, paper/frame presets, and 3×3 anchor selection, verified by `test_canvas_interactive_corner_resize_tool` (**53 tests**).
+
+---
+
 ## [1.10.2] - 2026-10-30
 
 ### Fixed & Performance
@@ -161,3 +212,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Standalone Windows executable distribution built with PyInstaller (`dist/A1 Mini Pen Plotter/A1 Mini Pen Plotter.exe`).
   - Automated build script (`build_windows.bat`) handling virtualenv creation, test execution, PyInstaller packaging, and output verification.
   - User installation script (`scripts/install_windows.ps1`) and Inno Setup configuration (`scripts/installer.iss`).
+
+[3.11.3]: https://github.com/Hansolox80/a1-mini-pen-plotter/compare/v3.11.2...v3.11.3
+[3.11.2]: https://github.com/Hansolox80/a1-mini-pen-plotter/compare/v3.10.2...v3.11.2
+[3.10.2]: https://github.com/Hansolox80/a1-mini-pen-plotter/compare/v2.10.2...v3.10.2
+[2.10.2]: https://github.com/Hansolox80/a1-mini-pen-plotter/compare/v1.10.2...v2.10.2
+[1.10.2]: https://github.com/Hansolox80/a1-mini-pen-plotter/compare/v1.10.1...v1.10.2
+[1.10.1]: https://github.com/Hansolox80/a1-mini-pen-plotter/compare/v1.1.0...v1.10.1
+[1.1.0]: https://github.com/Hansolox80/a1-mini-pen-plotter/compare/v1.0.2...v1.1.0
+[1.0.0]: https://github.com/Hansolox80/a1-mini-pen-plotter/releases/tag/v1.0.0
