@@ -4,11 +4,11 @@
 
 **Dedicated SVG-to-G-code Preparation Studio for the Bambu Lab A1 Mini**
 
-[![Release v3.11.2](https://img.shields.io/badge/release-v3.11.2-blue.svg?logo=github&logoColor=white)](https://github.com/Hansolox80/a1-mini-pen-plotter/releases/tag/v3.11.2)
+[![Release v3.11.3](https://img.shields.io/badge/release-v3.11.3-blue.svg?logo=github&logoColor=white)](https://github.com/Hansolox80/a1-mini-pen-plotter/releases/tag/v3.11.3)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%20%7C%203.13%20%7C%203.15-blue.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![PySide6](https://img.shields.io/badge/GUI-PySide6%20Qt6-brightgreen.svg?logo=qt&logoColor=white)](https://doc.qt.io/qtforpython-6/)
 [![Platform Multi](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-0078D6.svg?logo=linux&logoColor=white)](https://github.com/Hansolox80/a1-mini-pen-plotter/releases)
-[![Tests Passing](https://img.shields.io/badge/tests-56%20passed-22c55e.svg?logo=pytest&logoColor=white)](tests/)
+[![Tests Passing](https://img.shields.io/badge/tests-65%20passed-22c55e.svg?logo=pytest&logoColor=white)](tests/)
 [![License MIT](https://img.shields.io/badge/license-MIT-purple.svg)](LICENSE)
 [![Machine Bambu Lab A1 Mini](https://img.shields.io/badge/hardware-Bambu%20Lab%20A1%20Mini%20(180%C3%97180mm)-green.svg)](https://bambulab.com/en/a1-mini)
 
@@ -22,21 +22,19 @@
 
 ---
 
-## What's New in Release v3.11.2
+## What's New in Release v3.11.3
 
-- **Centering & Coordinate System Realignment (Zero Y-Offset Drift)**:
-  - Eliminated the fixed `-22 mm` physical toolhead offset previously baked into bed centering computations. The build plate visualizer, Safe Area boundaries, and G-code generator now share a unified physical $(0, 0)$ coordinate system.
-  - Clicking **Center Plate** (`Ctrl+C`) or loading an SVG places geometry at the exact mechanical center of the $180 \times 180\text{ mm}$ bed ($[X=90, Y=90]$).
-  - Eliminates out-of-bounds bed crashes on low-$Y$ coordinates when scaling or centering large artworks.
-- **Universal Infill Generation (Linear Hatching & Concentric Contours)**:
-  - Fully decoupled infill generation from SVG CSS fill tags. Closed vector contours, polylines, and multi-polygon geometries automatically receive full Hatching (single or cross-hatch) or Concentric Contour toolpaths both in the live canvas preview and generated G-code.
-- **Calibrated Profile Auto-Default & PyInstaller Frozen Path Resolution**:
-  - Automatically loads and selects the user's calibrated physical pen profile (`Calibrado-03.11.2026`) upon launch in both development and standalone PyInstaller distributions.
-  - Dynamically searches portable `profiles/` next to the executable, allowing in-place edits and custom profile backups without tampering with internal package bundles.
-- **App Version Status Display**:
-  - Replaced machine status string with explicit application version identifier `| v3.11.2` in the status bar for immediate release verification.
+- **11 New Themes + Recommended Theme Selector**:
+  - Added 8 Dark themes (`Emerald Matrix` *(Recommended)*, `Arctic Blue`, `Industrial Amber`, `Crimson Night`, `Deep Ocean`, `Phosphor CRT`, `Midnight Purple`, `Slate Steel`) and 3 Light themes (`Warm Paper`, `Platinum`, `Solarized Light`) alongside `Graphite Dark` and `Slate Engineering`.
+  - Includes `All` / `Dark` / `Light` category filtering and live palette swatch previews in **Settings → Appearance & Defaults**.
+- **Smooth Dark / Light Mode Toggle Switch**:
+  - Added an animated pill toggle switch (`ThemeModeSwitch`) in the top toolbar to smoothly switch between your last-used Dark and Light themes without recomputing toolpaths.
+- **Cross-Platform Custom Window Chrome**:
+  - Added 8 selectable window chrome designs (`Minimal Flat` *(Recommended)*, `Modern Pill Close`, `Capsule Control Tiles`, `macOS Traffic Lights`, `CAD Unified Studio`, `Accent Edge Strip`, `Soft Circular Floating`, and `System Native OS Frame`) with live preview in Settings and full drag, double-click maximize/restore, and 8-edge resize support.
+- **Windows 11 Light App Mode Menu & Bleed-Through Fix (#1)**:
+  - Added explicit `QMenuBar` / `QMenu` styling and full `QPalette` + `QScrollArea` / `QScrollBar` / `QTabWidget` / `QSplitter` theming so menus and panels consistently follow the application's selected theme. Special thanks to [@Wonderer643](https://github.com/Wonderer643).
 - **Comprehensive Quality Assurance**:
-  - Expanded test suite to **56 passing tests** across deep end-to-end stress testing, concurrency, multi-polygon geometric containment, boundary soft stops, and edge-case fuzzing.
+  - Expanded test suite to **65 passing tests** covering themes, palette generation, window chrome switching, geometry, boundaries, concurrency, and UI stress.
 
 ---
 
